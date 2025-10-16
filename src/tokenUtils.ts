@@ -200,13 +200,12 @@ export async function deductTokens(
                     created_at
                 )
                 VALUES (?, ?, 'usage', ?,
-                    (SELECT current_token_balance - ? FROM users WHERE user_id = ?),
+                    (SELECT current_token_balance FROM users WHERE user_id = ?),
                     ?, ?)
             `).bind(
                 transactionId,
                 userId,
                 -tokenAmount, // Negative for usage
-                tokenAmount,
                 userId,
                 `${serverName}: ${toolName}`,
                 timestamp
