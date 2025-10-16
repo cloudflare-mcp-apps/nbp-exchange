@@ -6,9 +6,11 @@ import type { User } from "@workos-inc/node";
  * This type defines the authentication and authorization data that will be
  * available via `this.props` in the McpAgent after successful OAuth flow.
  *
- * Data comes from WorkOS AuthKit after Magic Auth authentication.
+ * Data comes from WorkOS AuthKit after Magic Auth authentication and
+ * database user lookup for token management.
  */
 export interface Props {
+    // WorkOS authentication data
     /** WorkOS user object containing id, email, firstName, lastName, etc. */
     user: User;
 
@@ -23,6 +25,19 @@ export interface Props {
 
     /** Optional: WorkOS organization ID if user belongs to an organization */
     organizationId?: string;
+
+    // Database user data (populated during OAuth callback)
+    /** User ID from mcp-tokens-database (primary key for token management) */
+    userId: string;
+
+    /** User email address (from WorkOS, used to query database) */
+    email: string;
+
+    /**
+     * Current token balance (snapshot at authentication time)
+     * NOTE: Always re-query database for accurate balance before token operations
+     */
+    currentBalance: number;
 
     /**
      * Index signature required by McpAgent generic Props type

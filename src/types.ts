@@ -11,11 +11,14 @@ export interface Env {
     /** Durable Object namespace for MCP server instances (required by McpAgent) */
     MCP_OBJECT: DurableObjectNamespace;
 
+    /** D1 Database for token management (shared with mcp-token-system) */
+    DB: D1Database;
+
     /** WorkOS Client ID (public, used to initiate OAuth flows) */
     WORKOS_CLIENT_ID: string;
 
-    /** WorkOS Client Secret (sensitive, used to exchange authorization codes for tokens) */
-    WORKOS_CLIENT_SECRET: string;
+    /** WorkOS API Key (sensitive, starts with sk_, used to initialize WorkOS SDK) */
+    WORKOS_API_KEY: string;
 }
 
 // NBP API response types

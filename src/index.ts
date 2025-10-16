@@ -18,8 +18,7 @@ export { NbpMCP };
  * - /register - Dynamic Client Registration endpoint
  *
  * MCP Endpoints (protected by authentication):
- * - /sse - Server-Sent Events transport (widely supported)
- * - /mcp - Streamable HTTP transport (newer standard)
+ * - /sse - Server-Sent Events transport (currently configured)
  *
  * Authentication Flow:
  * 1. MCP client connects and initiates OAuth
@@ -35,11 +34,9 @@ export { NbpMCP };
  * - getCurrencyHistory: Get historical rate series over date range
  */
 export default new OAuthProvider({
-    // MCP endpoints with dual transport support
-    apiHandlers: {
-        '/sse': NbpMCP.serveSSE('/sse'),   // Server-Sent Events transport
-        '/mcp': NbpMCP.serve('/mcp'),       // Streamable HTTP transport
-    },
+    // Use legacy configuration (proven working pattern from Cloudflare examples)
+    apiRoute: "/sse",
+    apiHandler: NbpMCP.mount("/sse") as any,  // mount() is alias for serveSSE()
 
     // OAuth authentication handler (WorkOS AuthKit integration)
     defaultHandler: AuthkitHandler as any,

@@ -4,6 +4,7 @@ import * as jose from "jose";
 import { type AccessToken, type AuthenticationResponse, WorkOS } from "@workos-inc/node";
 import type { Env } from "./types";
 import type { Props } from "./props";
+import { getUserByEmail, formatPurchaseRequiredPage } from "./tokenUtils";
 
 /**
  * Authentication handler for WorkOS AuthKit integration
@@ -30,7 +31,7 @@ const app = new Hono<{
  * Middleware: Initialize WorkOS SDK for all routes
  */
 app.use(async (c, next) => {
-    c.set("workOS", new WorkOS(c.env.WORKOS_CLIENT_SECRET));
+    c.set("workOS", new WorkOS(c.env.WORKOS_API_KEY));
     await next();
 });
 
@@ -51,9 +52,10 @@ app.get("/authorize", async (c) => {
     return Response.redirect(
         c.get("workOS").userManagement.getAuthorizationUrl({
             provider: "authkit", // Enables Magic Auth (6-digit email code)
-            clientId: c.env.WORKOS_CLIENT_ID,
+            clientId: c.env.WORKOS_CLIENT_ID, // WorkOS application client ID
             redirectUri: new URL("/callback", c.req.url).href,
-            state: btoa(JSON.stringify(oauthReqInfo)), // Store OAuth request state
+            // Pass the MCP client ID in state so we can use it in callback
+            state: btoa(JSON.stringify(oauthReqInfo)), // Store OAuth request state including MCP client ID
         }),
     );
 });
@@ -97,6 +99,18 @@ app.get("/callback", async (c) => {
     // Decode JWT to get permissions
     const { permissions = [] } = jose.decodeJwt<AccessToken>(accessToken);
 
+    // CRITICAL: Check if user exists in token database
+    console.log(`[NBP OAuth] Checking if user exists in database: ${user.email}`);
+    const dbUser = await getUserByEmail(c.env.DB, user.email);
+
+    // If user not found in database, reject authorization and show purchase page
+    if (!dbUser) {
+        console.log(`[NBP OAuth] ❌ User not found in database: ${user.email} - Tokens required`);
+        return c.html(formatPurchaseRequiredPage(user.email), 403);
+    }
+
+    console.log(`[NBP OAuth] ✅ User found in database: ${dbUser.user_id}, balance: ${dbUser.current_token_balance} tokens`);
+
     // Complete OAuth flow and get redirect URL back to MCP client
     const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
         request: oauthReqInfo,
@@ -105,12 +119,19 @@ app.get("/callback", async (c) => {
         scope: permissions,
 
         // Props will be available via `this.props` in NbpMCP class
+        // Include database user info for token management
         props: {
+            // WorkOS authentication data
             accessToken,
             organizationId,
             permissions,
             refreshToken,
             user,
+
+            // Database user data for token management
+            userId: dbUser.user_id,
+            email: dbUser.email,
+            currentBalance: dbUser.current_token_balance,
         } satisfies Props,
     });
 
