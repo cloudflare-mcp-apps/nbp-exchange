@@ -3,17 +3,27 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fetchCurrencyRate, fetchGoldPrice, fetchCurrencyHistory } from "./nbp-client";
 import type { Env } from "./types";
+import type { Props } from "./props";
 
 /**
- * NBP Exchange MCP Server
+ * NBP Exchange MCP Server with WorkOS Authentication
  *
- * A stateless MCP server that provides access to Polish National Bank (NBP)
- * currency exchange rates and gold prices via their public API.
+ * Provides access to Polish National Bank (NBP) currency exchange rates and gold prices
+ * via their public API. All tools are protected by WorkOS Magic Auth authentication.
  *
- * This server does NOT use state management (no initialState, setState, or onStateUpdate).
- * Following the authless MCP server pattern - no generic type parameters needed.
+ * Generic type parameters:
+ * - Env: Cloudflare Workers environment bindings (KV, WorkOS credentials)
+ * - unknown: No state management (stateless server)
+ * - Props: Authenticated user context from WorkOS (user, tokens, permissions)
+ *
+ * Authentication flow:
+ * 1. User connects via MCP client
+ * 2. Redirected to WorkOS AuthKit (Magic Auth)
+ * 3. User enters email → receives 6-digit code
+ * 4. After authentication, user info available via this.props
+ * 5. All NBP tools become accessible
  */
-export class NbpMCP extends McpAgent {
+export class NbpMCP extends McpAgent<Env, unknown, Props> {
     server = new McpServer({
         name: "NBP Exchange Rates",
         version: "1.0.0",

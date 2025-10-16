@@ -1,48 +1,51 @@
+import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { NbpMCP } from "./server";
-import type { Env } from "./types";
+import { AuthkitHandler } from "./authkit-handler";
 
 // Export the McpAgent class for Cloudflare Workers
 export { NbpMCP };
 
 /**
- * Worker fetch handler with dual transport support
+ * NBP Exchange MCP Server with WorkOS Authentication
  *
- * Supports both SSE (Server-Sent Events) and Streamable HTTP transport methods
- * to ensure compatibility with all MCP clients.
+ * This MCP server is protected by OAuth 2.1 authentication using WorkOS AuthKit.
+ * Users must authenticate via Magic Auth (6-digit email code) before accessing NBP tools.
+ *
+ * OAuth Endpoints (automatically handled by OAuthProvider):
+ * - /authorize - Initiates OAuth flow, redirects to WorkOS AuthKit
+ * - /callback - Handles OAuth callback from WorkOS
+ * - /token - Token endpoint for OAuth clients
+ * - /register - Dynamic Client Registration endpoint
+ *
+ * MCP Endpoints (protected by authentication):
+ * - /sse - Server-Sent Events transport (widely supported)
+ * - /mcp - Streamable HTTP transport (newer standard)
+ *
+ * Authentication Flow:
+ * 1. MCP client connects and initiates OAuth
+ * 2. User redirected to WorkOS AuthKit
+ * 3. User enters email → receives 6-digit Magic Auth code
+ * 4. User enters code → WorkOS validates
+ * 5. OAuth completes, tokens issued
+ * 6. MCP client can now access protected tools
+ *
+ * Available Tools (after authentication):
+ * - getCurrencyRate: Get current/historical buy/sell rates for currencies
+ * - getGoldPrice: Get NBP official gold price
+ * - getCurrencyHistory: Get historical rate series over date range
  */
-export default {
-    fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {
-        const { pathname } = new URL(request.url);
-
-        // SSE transport (legacy, but widely supported by current MCP clients)
-        if (pathname.startsWith('/sse')) {
-            return NbpMCP.serveSSE('/sse').fetch(request, env, ctx);
-        }
-
-        // Streamable HTTP transport (new standard, introduced March 2025)
-        if (pathname.startsWith('/mcp')) {
-            return NbpMCP.serve('/mcp').fetch(request, env, ctx);
-        }
-
-        // Root endpoint - informational response
-        if (pathname === '/') {
-            return new Response(
-                'NBP Exchange MCP Server\n\n' +
-                'A Model Context Protocol (MCP) server for querying Polish National Bank exchange rates.\n\n' +
-                'Available endpoints:\n' +
-                '  /sse - Server-Sent Events transport\n' +
-                '  /mcp - Streamable HTTP transport\n\n' +
-                'Available tools:\n' +
-                '  - getCurrencyRate: Get buy/sell rates for a currency\n' +
-                '  - getGoldPrice: Get NBP gold price\n' +
-                '  - getCurrencyHistory: Get historical rate series\n',
-                {
-                    status: 200,
-                    headers: { 'Content-Type': 'text/plain' }
-                }
-            );
-        }
-
-        return new Response('Not found', { status: 404 });
+export default new OAuthProvider({
+    // MCP endpoints with dual transport support
+    apiHandlers: {
+        '/sse': NbpMCP.serveSSE('/sse'),   // Server-Sent Events transport
+        '/mcp': NbpMCP.serve('/mcp'),       // Streamable HTTP transport
     },
-};
+
+    // OAuth authentication handler (WorkOS AuthKit integration)
+    defaultHandler: AuthkitHandler as any,
+
+    // OAuth 2.1 endpoints
+    authorizeEndpoint: "/authorize",
+    tokenEndpoint: "/token",
+    clientRegistrationEndpoint: "/register",
+});

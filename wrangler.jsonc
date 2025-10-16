@@ -1,8 +1,10 @@
 /**
  * Cloudflare Workers configuration for NBP Exchange MCP Server
  *
- * Note: Even though this is a STATELESS MCP server (we don't use state management),
- * McpAgent still requires Durable Objects configuration for the MCP protocol handling.
+ * This MCP server uses:
+ * - Durable Objects: Required by McpAgent for MCP protocol handling and WebSocket connections
+ * - KV Namespace: Required for OAuth token storage and session management
+ * - WorkOS Secrets: Client ID and Client Secret for authentication
  *
  * For more details on Wrangler configuration:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
@@ -30,11 +32,14 @@
     ]
   },
 
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "b77ec4c7e96043fab0c466a978c2f186"
+    }
+  ],
+
   "observability": {
     "enabled": true
-  },
-
-  "dev": {
-    "port": 8787
   }
 }
