@@ -1,11 +1,10 @@
 /**
  * Token Management Utilities for NBP MCP Server
  *
- * This module provides functions for:
+ * This module provides local utility functions for:
  * 1. Querying user information from shared token database
- * 2. Checking token balances before tool execution
- * 3. Deducting tokens atomically with transaction logging
- * 4. Formatting error messages in Polish
+ * 2. Formatting error messages in Polish
+ * 3. Rendering error pages for unauthorized users
  *
  * CRITICAL PRINCIPLE: Always query database for current balance. Never cache.
  *
@@ -13,6 +12,9 @@
  * - users: user_id, email, current_token_balance, total_tokens_used, total_tokens_purchased
  * - transactions: transaction_id, user_id, type, token_amount, balance_after, description, created_at
  * - mcp_actions: action_id, user_id, mcp_server_name, tool_name, parameters, tokens_consumed, success, created_at
+ *
+ * NOTE: Token consumption logic has been moved to tokenConsumption.ts module.
+ * Use checkBalance() and consumeTokensWithRetry() from that module instead.
  */
 
 /**
@@ -26,25 +28,6 @@ export interface DatabaseUser {
     total_tokens_used: number;
     stripe_customer_id: string | null;
     created_at: string;
-}
-
-/**
- * Result of token balance check
- */
-export interface BalanceCheckResult {
-    sufficient: boolean;
-    currentBalance: number;
-    required: number;
-}
-
-/**
- * Result of token deduction operation
- */
-export interface TokenDeductionResult {
-    success: boolean;
-    newBalance: number;
-    transactionId: string;
-    actionId: string;
 }
 
 /**
@@ -71,214 +54,11 @@ export async function getUserByEmail(
             return null;
         }
 
-        console.log(`[NBP Token Utils] User found: ${result.user_id}, balance: ${result.current_token_balance}`);
+        console.log(`[NBP Token Utils] User found: ${result.user_id}, balance: ${result.current_token_balance} tokens`);
         return result;
     } catch (error) {
         console.error('[NBP Token Utils] Error querying user by email:', error);
         throw new Error('Failed to query user from database');
-    }
-}
-
-/**
- * Check if user has sufficient token balance
- *
- * This is a READ-ONLY check that does NOT deduct tokens.
- * Always queries database for current balance - never uses cached values.
- *
- * @param db - D1 Database instance
- * @param userId - User's UUID from database
- * @param requiredTokens - Number of tokens required for the action
- * @returns Balance check result with sufficient flag and current balance
- */
-export async function checkTokenBalance(
-    db: D1Database,
-    userId: string,
-    requiredTokens: number
-): Promise<BalanceCheckResult> {
-    try {
-        // Query database for current balance (NEVER use cached value)
-        const result = await db
-            .prepare('SELECT current_token_balance FROM users WHERE user_id = ?')
-            .bind(userId)
-            .first<{ current_token_balance: number }>();
-
-        if (!result) {
-            console.error(`[NBP Token Utils] User not found during balance check: ${userId}`);
-            return {
-                sufficient: false,
-                currentBalance: 0,
-                required: requiredTokens,
-            };
-        }
-
-        const currentBalance = result.current_token_balance;
-        const sufficient = currentBalance >= requiredTokens;
-
-        console.log(
-            `[NBP Token Utils] Balance check: user ${userId} has ${currentBalance} tokens, needs ${requiredTokens}, sufficient: ${sufficient}`
-        );
-
-        return {
-            sufficient,
-            currentBalance,
-            required: requiredTokens,
-        };
-    } catch (error) {
-        console.error('[NBP Token Utils] Error checking balance:', error);
-        throw new Error('Failed to check token balance');
-    }
-}
-
-/**
- * Deduct tokens atomically with transaction logging
- *
- * Performs an atomic transaction that:
- * 1. Deducts tokens from user's balance
- * 2. Creates a transaction record (type='usage')
- * 3. Logs the MCP action with tool details
- *
- * All three operations succeed together or fail together.
- *
- * @param db - D1 Database instance
- * @param userId - User's UUID
- * @param tokenAmount - Number of tokens to deduct (positive number)
- * @param serverName - Name of this MCP server (e.g., 'nbp-exchange-mcp')
- * @param toolName - Name of the tool executed (e.g., 'getCurrencyRate')
- * @param actionParams - Parameters passed to the tool (for logging)
- * @returns Token deduction result with new balance and IDs
- */
-export async function deductTokens(
-    db: D1Database,
-    userId: string,
-    tokenAmount: number,
-    serverName: string,
-    toolName: string,
-    actionParams: Record<string, unknown> = {}
-): Promise<TokenDeductionResult> {
-    try {
-        // Generate unique IDs for transaction and action records
-        const transactionId = crypto.randomUUID();
-        const actionId = crypto.randomUUID();
-        const timestamp = new Date().toISOString();
-
-        // Validate inputs
-        if (tokenAmount <= 0) {
-            throw new Error('Token amount must be positive');
-        }
-
-        if (!userId || !serverName || !toolName) {
-            throw new Error('Missing required parameters');
-        }
-
-        console.log(
-            `[NBP Token Utils] Deducting ${tokenAmount} tokens for user ${userId}, server: ${serverName}, tool: ${toolName}`
-        );
-
-        // Store action parameters as JSON
-        const parametersJson = JSON.stringify(actionParams);
-
-        // Atomic transaction: All three operations must succeed together
-        const batchResult = await db.batch([
-            // 1. Update user balance and total tokens used
-            db.prepare(`
-                UPDATE users
-                SET
-                    current_token_balance = current_token_balance - ?,
-                    total_tokens_used = total_tokens_used + ?
-                WHERE user_id = ?
-            `).bind(tokenAmount, tokenAmount, userId),
-
-            // 2. Create transaction record (negative amount for usage)
-            db.prepare(`
-                INSERT INTO transactions (
-                    transaction_id,
-                    user_id,
-                    type,
-                    token_amount,
-                    balance_after,
-                    description,
-                    created_at
-                )
-                VALUES (?, ?, 'usage', ?,
-                    (SELECT current_token_balance FROM users WHERE user_id = ?),
-                    ?, ?)
-            `).bind(
-                transactionId,
-                userId,
-                -tokenAmount, // Negative for usage
-                userId,
-                `${serverName}: ${toolName}`,
-                timestamp
-            ),
-
-            // 3. Log MCP action with full details
-            db.prepare(`
-                INSERT INTO mcp_actions (
-                    action_id,
-                    user_id,
-                    mcp_server_name,
-                    tool_name,
-                    parameters,
-                    tokens_consumed,
-                    success,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `).bind(
-                actionId,
-                userId,
-                serverName,
-                toolName,
-                parametersJson,
-                tokenAmount,
-                1, // success = true (we only deduct after successful execution)
-                timestamp
-            ),
-        ]);
-
-        // Verify all operations succeeded
-        if (!batchResult || batchResult.length !== 3) {
-            throw new Error('Batch transaction failed');
-        }
-
-        // Check if user update affected any rows
-        if (batchResult[0].meta.changes === 0) {
-            throw new Error('User not found or balance update failed');
-        }
-
-        // Query updated balance
-        const balanceResult = await db
-            .prepare('SELECT current_token_balance FROM users WHERE user_id = ?')
-            .bind(userId)
-            .first<{ current_token_balance: number }>();
-
-        if (!balanceResult) {
-            throw new Error('Failed to retrieve updated balance');
-        }
-
-        const newBalance = balanceResult.current_token_balance;
-
-        console.log(
-            `[NBP Token Utils] ✅ Success! User ${userId}: ${newBalance + tokenAmount} → ${newBalance} tokens`
-        );
-
-        return {
-            success: true,
-            newBalance,
-            transactionId,
-            actionId,
-        };
-    } catch (error) {
-        console.error('[NBP Token Utils] ❌ Error deducting tokens:', error);
-        console.error({
-            userId,
-            tokenAmount,
-            serverName,
-            toolName,
-            error: error instanceof Error ? error.message : String(error),
-        });
-
-        throw new Error('Failed to deduct tokens: ' + (error instanceof Error ? error.message : String(error)));
     }
 }
 

@@ -4,7 +4,8 @@ import { z } from "zod";
 import { fetchCurrencyRate, fetchGoldPrice, fetchCurrencyHistory } from "./nbp-client";
 import type { Env } from "./types";
 import type { Props } from "./props";
-import { checkTokenBalance, deductTokens, formatInsufficientTokensError } from "./tokenUtils";
+import { checkBalance, consumeTokensWithRetry } from "./tokenConsumption";
+import { formatInsufficientTokensError } from "./tokenUtils";
 
 /**
  * NBP Exchange MCP Server with WorkOS Authentication
@@ -65,6 +66,9 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                 const TOOL_COST = 1; // All NBP tools cost 1 token
                 const TOOL_NAME = "getCurrencyRate";
 
+                // 0. Pre-generate action_id for idempotency
+                const actionId = crypto.randomUUID();
+
                 try {
                     // 1. Get user ID from props (set during OAuth)
                     const userId = this.props?.userId;
@@ -73,7 +77,7 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     }
 
                     // 2. Check token balance (ALWAYS query database for current balance)
-                    const balanceCheck = await checkTokenBalance(this.env.DB, userId, TOOL_COST);
+                    const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
 
                     // 3. If insufficient balance, return error message in Polish
                     if (!balanceCheck.sufficient) {
@@ -86,17 +90,20 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                         };
                     }
 
-                    // 4. Execute the NBP API call
+                    // 4. Execute the NBP API call and capture result
                     const result = await fetchCurrencyRate(currencyCode, date);
 
-                    // 5. Deduct tokens atomically with transaction logging
-                    await deductTokens(
+                    // 5. Consume tokens WITH RETRY and idempotency protection
+                    await consumeTokensWithRetry(
                         this.env.DB,
                         userId,
                         TOOL_COST,
                         "nbp-exchange-mcp",
                         TOOL_NAME,
-                        { currencyCode, date }
+                        { currencyCode, date },  // action params
+                        result,                   // action result - logged for audit
+                        true,                     // success flag
+                        actionId                  // pre-generated for idempotency
                     );
 
                     // 6. Return successful result
@@ -141,6 +148,9 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                 const TOOL_COST = 1; // All NBP tools cost 1 token
                 const TOOL_NAME = "getGoldPrice";
 
+                // 0. Pre-generate action_id for idempotency
+                const actionId = crypto.randomUUID();
+
                 try {
                     // 1. Get user ID from props (set during OAuth)
                     const userId = this.props?.userId;
@@ -149,7 +159,7 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     }
 
                     // 2. Check token balance (ALWAYS query database for current balance)
-                    const balanceCheck = await checkTokenBalance(this.env.DB, userId, TOOL_COST);
+                    const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
 
                     // 3. If insufficient balance, return error message in Polish
                     if (!balanceCheck.sufficient) {
@@ -162,17 +172,20 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                         };
                     }
 
-                    // 4. Execute the NBP API call
+                    // 4. Execute the NBP API call and capture result
                     const result = await fetchGoldPrice(date);
 
-                    // 5. Deduct tokens atomically with transaction logging
-                    await deductTokens(
+                    // 5. Consume tokens WITH RETRY and idempotency protection
+                    await consumeTokensWithRetry(
                         this.env.DB,
                         userId,
                         TOOL_COST,
                         "nbp-exchange-mcp",
                         TOOL_NAME,
-                        { date }
+                        { date },     // action params
+                        result,       // action result - logged for audit
+                        true,         // success flag
+                        actionId      // pre-generated for idempotency
                     );
 
                     // 6. Return successful result
@@ -254,6 +267,9 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                 const TOOL_COST = 1; // All NBP tools cost 1 token
                 const TOOL_NAME = "getCurrencyHistory";
 
+                // 0. Pre-generate action_id for idempotency
+                const actionId = crypto.randomUUID();
+
                 try {
                     // 1. Get user ID from props (set during OAuth)
                     const userId = this.props?.userId;
@@ -262,7 +278,7 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     }
 
                     // 2. Check token balance (ALWAYS query database for current balance)
-                    const balanceCheck = await checkTokenBalance(this.env.DB, userId, TOOL_COST);
+                    const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
 
                     // 3. If insufficient balance, return error message in Polish
                     if (!balanceCheck.sufficient) {
@@ -275,17 +291,20 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                         };
                     }
 
-                    // 4. Execute the NBP API call
+                    // 4. Execute the NBP API call and capture result
                     const result = await fetchCurrencyHistory(currencyCode, startDate, endDate);
 
-                    // 5. Deduct tokens atomically with transaction logging
-                    await deductTokens(
+                    // 5. Consume tokens WITH RETRY and idempotency protection
+                    await consumeTokensWithRetry(
                         this.env.DB,
                         userId,
                         TOOL_COST,
                         "nbp-exchange-mcp",
                         TOOL_NAME,
-                        { currencyCode, startDate, endDate }
+                        { currencyCode, startDate, endDate },  // action params
+                        result,                                 // action result - logged for audit
+                        true,                                   // success flag
+                        actionId                                // pre-generated for idempotency
                     );
 
                     // 6. Return successful result

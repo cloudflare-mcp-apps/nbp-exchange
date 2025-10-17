@@ -34,12 +34,6 @@ export interface Props {
     email: string;
 
     /**
-     * Current token balance (snapshot at authentication time)
-     * NOTE: Always re-query database for accurate balance before token operations
-     */
-    currentBalance: number;
-
-    /**
      * Index signature required by McpAgent generic Props type
      * Allows additional custom properties to be stored in the auth context
      */

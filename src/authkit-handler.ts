@@ -131,7 +131,6 @@ app.get("/callback", async (c) => {
             // Database user data for token management
             userId: dbUser.user_id,
             email: dbUser.email,
-            currentBalance: dbUser.current_token_balance,
         } satisfies Props,
     });
 
