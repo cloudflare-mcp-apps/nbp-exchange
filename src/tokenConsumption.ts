@@ -18,6 +18,7 @@ export interface BalanceCheckResult {
   sufficient: boolean;
   currentBalance: number;
   required: number;
+  userDeleted?: boolean; // True if user account has been deleted (is_deleted = 1)
 }
 
 /**
@@ -49,12 +50,13 @@ export async function checkBalance(
   requiredTokens: number
 ): Promise<BalanceCheckResult> {
   try {
-    // Query database for current balance
+    // Query database for current balance and deletion status
     // CRITICAL: Never cache this value - always fresh query
+    // SECURITY FIX: Query is_deleted to distinguish deleted users from insufficient balance
     const result = await db
-      .prepare('SELECT current_token_balance FROM users WHERE user_id = ?')
+      .prepare('SELECT current_token_balance, is_deleted FROM users WHERE user_id = ?')
       .bind(userId)
-      .first<{ current_token_balance: number }>();
+      .first<{ current_token_balance: number; is_deleted: number }>();
 
     if (!result) {
       console.error(`[Token Consumption] User not found: ${userId}`);
@@ -62,6 +64,18 @@ export async function checkBalance(
         sufficient: false,
         currentBalance: 0,
         required: requiredTokens,
+        userDeleted: false,
+      };
+    }
+
+    // UX IMPROVEMENT: Detect deleted accounts separately from insufficient balance
+    if (result.is_deleted === 1) {
+      console.error(`[Token Consumption] User account deleted: ${userId}`);
+      return {
+        sufficient: false,
+        currentBalance: 0,
+        required: requiredTokens,
+        userDeleted: true, // Flag to show "account deleted" error instead of "insufficient tokens"
       };
     }
 
@@ -76,6 +90,7 @@ export async function checkBalance(
       sufficient,
       currentBalance,
       required: requiredTokens,
+      userDeleted: false,
     };
   } catch (error) {
     console.error('[Token Consumption] Error checking balance:', error);
@@ -175,12 +190,13 @@ export async function consumeTokens(
     // ============================================================
     const batchResult = await db.batch([
       // 1. Update user balance and total tokens used
+      // SECURITY FIX: Check is_deleted to prevent deleted users from consuming tokens
       db.prepare(`
         UPDATE users
         SET
           current_token_balance = current_token_balance - ?,
           total_tokens_used = total_tokens_used + ?
-        WHERE user_id = ?
+        WHERE user_id = ? AND is_deleted = 0
       `).bind(tokenAmount, tokenAmount, userId),
 
       // 2. Create transaction record (negative amount for usage)
@@ -236,9 +252,9 @@ export async function consumeTokens(
       throw new Error('Batch transaction failed');
     }
 
-    // Check if any operation affected 0 rows (user not found, etc.)
+    // Check if any operation affected 0 rows (user not found, deleted, or balance update failed)
     if (batchResult[0].meta.changes === 0) {
-      throw new Error('User not found or balance update failed');
+      throw new Error('User not found, deleted, or balance update failed');
     }
 
     // Query updated balance
@@ -425,6 +441,7 @@ export async function getUserStats(
   actionsPerformed: number;
 } | null> {
   try {
+    // SECURITY FIX: Check is_deleted to prevent deleted users from getting stats
     const userResult = await db
       .prepare(`
         SELECT
@@ -432,7 +449,7 @@ export async function getUserStats(
           total_tokens_purchased,
           total_tokens_used
         FROM users
-        WHERE user_id = ?
+        WHERE user_id = ? AND is_deleted = 0
       `)
       .bind(userId)
       .first<{

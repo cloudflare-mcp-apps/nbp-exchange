@@ -4,7 +4,7 @@ import * as jose from "jose";
 import { type AccessToken, type AuthenticationResponse, WorkOS } from "@workos-inc/node";
 import type { Env } from "./types";
 import type { Props } from "./props";
-import { getUserByEmail, formatPurchaseRequiredPage } from "./tokenUtils";
+import { getUserByEmail, formatPurchaseRequiredPage, formatAccountDeletedPage } from "./tokenUtils";
 
 /**
  * Authentication handler for WorkOS AuthKit integration
@@ -107,6 +107,13 @@ app.get("/callback", async (c) => {
     if (!dbUser) {
         console.log(`[NBP OAuth] ❌ User not found in database: ${user.email} - Tokens required`);
         return c.html(formatPurchaseRequiredPage(user.email), 403);
+    }
+
+    // SECURITY FIX: Defensive check for deleted accounts (belt-and-suspenders approach)
+    // This provides defense-in-depth even if getUserByEmail() query is modified
+    if (dbUser.is_deleted === 1) {
+        console.log(`[NBP OAuth] ❌ Account deleted: ${user.email} (user_id: ${dbUser.user_id})`);
+        return c.html(formatAccountDeletedPage(), 403);
     }
 
     console.log(`[NBP OAuth] ✅ User found in database: ${dbUser.user_id}, balance: ${dbUser.current_token_balance} tokens`);

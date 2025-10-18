@@ -28,6 +28,7 @@ export interface DatabaseUser {
     total_tokens_used: number;
     stripe_customer_id: string | null;
     created_at: string;
+    is_deleted: number; // 0 = active, 1 = deleted (SECURITY: Added for account deletion check)
 }
 
 /**
@@ -44,8 +45,9 @@ export async function getUserByEmail(
     try {
         console.log(`[NBP Token Utils] Querying user by email: ${email}`);
 
+        // SECURITY FIX: Check is_deleted to prevent deleted users from authenticating
         const result = await db
-            .prepare('SELECT * FROM users WHERE email = ?')
+            .prepare('SELECT * FROM users WHERE email = ? AND is_deleted = 0')
             .bind(email)
             .first<DatabaseUser>();
 
@@ -88,6 +90,28 @@ export function formatInsufficientTokensError(
 Aktualny stan: ${currentBalance} ${tokenWord}
 Wymagane: ${requiredTokens} ${requiredWord}
 Kup tokeny: https://panel.wtyczki.ai/`;
+}
+
+/**
+ * Format deleted account error message in Polish
+ *
+ * Creates a user-friendly error message explaining that the account
+ * has been deleted and MCP tools are no longer accessible.
+ *
+ * @param toolName - Name of the tool that was attempted
+ * @returns Formatted error message in Polish
+ */
+export function formatAccountDeletedError(toolName: string): string {
+    return `❌ Konto zostało usunięte
+
+To konto zostało usunięte zgodnie z żądaniem użytkownika.
+Nie możesz korzystać z narzędzia ${toolName}.
+
+ℹ️ Informacja RODO:
+Twoje dane zostały anonimizowane zgodnie z art. 17 RODO (prawo do bycia zapomnianym).
+
+Jeśli chcesz ponownie korzystać z usługi, możesz utworzyć nowe konto na:
+https://panel.wtyczki.ai/`;
 }
 
 /**
@@ -163,6 +187,90 @@ export function formatPurchaseRequiredPage(userEmail: string): string {
         </p>
         <a href="https://panel.wtyczki.ai/" class="purchase-button">
             Kup tokeny
+        </a>
+    </div>
+</body>
+</html>`;
+}
+
+/**
+ * Format error page HTML for users with deleted accounts
+ *
+ * Creates an HTML error page for users who authenticated via WorkOS
+ * but have a deleted account (is_deleted = 1).
+ *
+ * @returns HTML error page
+ */
+export function formatAccountDeletedPage(): string {
+    return `<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Konto usunięte - NBP Exchange MCP</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            text-align: center;
+            background: #f5f5f5;
+        }
+        .error-box {
+            background: white;
+            border-radius: 8px;
+            padding: 40px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #e74c3c;
+            margin-bottom: 20px;
+        }
+        p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+        .info {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+        }
+        .home-button {
+            display: inline-block;
+            background: #3498db;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .home-button:hover {
+            background: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-box">
+        <h1>❌ Konto zostało usunięte</h1>
+        <p>
+            To konto zostało usunięte zgodnie z żądaniem użytkownika.
+        </p>
+        <div class="info">
+            <strong>ℹ️ Informacja RODO:</strong><br>
+            Twoje dane zostały anonimizowane zgodnie z art. 17 RODO (prawo do bycia zapomnianym).
+            Jeśli chcesz ponownie korzystać z usługi, możesz utworzyć nowe konto.
+        </div>
+        <p>
+            Jeśli usunąłeś konto przez pomyłkę, możesz zarejestrować się ponownie.
+        </p>
+        <a href="https://panel.wtyczki.ai/" class="home-button">
+            Strona główna
         </a>
     </div>
 </body>

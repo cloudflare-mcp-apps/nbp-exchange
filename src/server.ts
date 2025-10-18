@@ -5,7 +5,7 @@ import { fetchCurrencyRate, fetchGoldPrice, fetchCurrencyHistory } from "./nbp-c
 import type { Env } from "./types";
 import type { Props } from "./props";
 import { checkBalance, consumeTokensWithRetry } from "./tokenConsumption";
-import { formatInsufficientTokensError } from "./tokenUtils";
+import { formatInsufficientTokensError, formatAccountDeletedError } from "./tokenUtils";
 
 /**
  * NBP Exchange MCP Server with WorkOS Authentication
@@ -79,7 +79,18 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     // 2. Check token balance (ALWAYS query database for current balance)
                     const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
 
-                    // 3. If insufficient balance, return error message in Polish
+                    // 3a. UX IMPROVEMENT: If account deleted, show specific error message
+                    if (balanceCheck.userDeleted) {
+                        return {
+                            content: [{
+                                type: "text" as const,
+                                text: formatAccountDeletedError(TOOL_NAME)
+                            }],
+                            isError: true
+                        };
+                    }
+
+                    // 3b. If insufficient balance, return error message in Polish
                     if (!balanceCheck.sufficient) {
                         return {
                             content: [{
@@ -161,7 +172,18 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     // 2. Check token balance (ALWAYS query database for current balance)
                     const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
 
-                    // 3. If insufficient balance, return error message in Polish
+                    // 3a. UX IMPROVEMENT: If account deleted, show specific error message
+                    if (balanceCheck.userDeleted) {
+                        return {
+                            content: [{
+                                type: "text" as const,
+                                text: formatAccountDeletedError(TOOL_NAME)
+                            }],
+                            isError: true
+                        };
+                    }
+
+                    // 3b. If insufficient balance, return error message in Polish
                     if (!balanceCheck.sufficient) {
                         return {
                             content: [{
@@ -280,7 +302,18 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     // 2. Check token balance (ALWAYS query database for current balance)
                     const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
 
-                    // 3. If insufficient balance, return error message in Polish
+                    // 3a. UX IMPROVEMENT: If account deleted, show specific error message
+                    if (balanceCheck.userDeleted) {
+                        return {
+                            content: [{
+                                type: "text" as const,
+                                text: formatAccountDeletedError(TOOL_NAME)
+                            }],
+                            isError: true
+                        };
+                    }
+
+                    // 3b. If insufficient balance, return error message in Polish
                     if (!balanceCheck.sufficient) {
                         return {
                             content: [{
