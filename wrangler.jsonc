@@ -36,7 +36,13 @@
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",
-      "id": "b77ec4c7e96043fab0c466a978c2f186"
+      "id": "b77ec4c7e96043fab0c466a978c2f186",
+      "preview_id": "cf8ef9f38ab24ae583d20dd4e973810c"
+    },
+    {
+      "binding": "USER_SESSIONS",
+      "id": "e5ad189139cd44f38ba0224c3d596c73",
+      "preview_id": "49c43fb4d6e242db87fd885ba46b5a1d"
     }
   ],
 

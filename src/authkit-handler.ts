@@ -48,6 +48,57 @@ app.get("/authorize", async (c) => {
         return c.text("Invalid request", 400);
     }
 
+    // Check for custom login session
+    const cookieHeader = c.req.header('Cookie');
+    let sessionToken: string | null = null;
+
+    if (cookieHeader) {
+        const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+            const [key, value] = cookie.trim().split('=');
+            acc[key] = value;
+            return acc;
+        }, {} as Record<string, string>);
+        sessionToken = cookies['workos_session'] || null;
+    }
+
+    // If no session, redirect to custom login
+    if (!sessionToken && c.env.USER_SESSIONS) {
+        console.log('🔐 [oauth] No session found, redirecting to custom login');
+        const loginUrl = new URL('/auth/login-custom', c.req.url);
+        loginUrl.searchParams.set('return_to', c.req.url);
+        return Response.redirect(loginUrl.toString(), 302);
+    }
+
+    // Validate session if present
+    if (sessionToken && c.env.USER_SESSIONS) {
+        const sessionData = await c.env.USER_SESSIONS.get(
+            `workos_session:${sessionToken}`,
+            'json'
+        );
+
+        if (!sessionData) {
+            console.log('🔐 [oauth] Invalid session, redirecting to custom login');
+            const loginUrl = new URL('/auth/login-custom', c.req.url);
+            loginUrl.searchParams.set('return_to', c.req.url);
+            return Response.redirect(loginUrl.toString(), 302);
+        }
+
+        const session = sessionData as { expires_at: number; user_id: string };
+
+        // Check expiration
+        if (session.expires_at < Date.now()) {
+            console.log('🔐 [oauth] Session expired, redirecting to custom login');
+            const loginUrl = new URL('/auth/login-custom', c.req.url);
+            loginUrl.searchParams.set('return_to', c.req.url);
+            return Response.redirect(loginUrl.toString(), 302);
+        }
+
+        // Session valid - continue with OAuth flow using session user_id
+        console.log('✅ [oauth] Valid session found, continuing OAuth flow');
+        // TODO: Could load user from database here and use their data directly
+        // For now, fall through to WorkOS as it's already authenticated
+    }
+
     // Redirect to WorkOS AuthKit with Magic Auth enabled
     return Response.redirect(
         c.get("workOS").userManagement.getAuthorizationUrl({

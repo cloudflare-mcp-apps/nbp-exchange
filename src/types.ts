@@ -19,6 +19,9 @@ export interface Env {
 
     /** WorkOS API Key (sensitive, starts with sk_, used to initialize WorkOS SDK) */
     WORKOS_API_KEY: string;
+
+    /** KV namespace for custom login session storage (optional, required for custom branded login) */
+    USER_SESSIONS?: KVNamespace;
 }
 
 // NBP API response types
