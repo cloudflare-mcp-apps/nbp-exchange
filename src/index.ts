@@ -18,7 +18,8 @@ export { NbpMCP };
  * - /register - Dynamic Client Registration endpoint
  *
  * MCP Endpoints (protected by authentication):
- * - /sse - Server-Sent Events transport (currently configured)
+ * - /sse - Server-Sent Events transport (legacy, for Claude Desktop)
+ * - /mcp - Streamable HTTP transport (new standard, for ChatGPT and modern clients)
  *
  * Authentication Flow:
  * 1. MCP client connects and initiates OAuth
@@ -34,9 +35,12 @@ export { NbpMCP };
  * - getCurrencyHistory: Get historical rate series over date range
  */
 export default new OAuthProvider({
-    // Use legacy configuration (proven working pattern from Cloudflare examples)
-    apiRoute: "/sse",
-    apiHandler: NbpMCP.mount("/sse") as any,  // mount() is alias for serveSSE()
+    // Dual transport support (SSE + Streamable HTTP)
+    // This ensures compatibility with all MCP clients (Claude, ChatGPT, etc.)
+    apiHandlers: {
+        '/sse': NbpMCP.serveSSE('/sse'),  // Legacy SSE transport
+        '/mcp': NbpMCP.serve('/mcp'),     // New Streamable HTTP transport
+    },
 
     // OAuth authentication handler (WorkOS AuthKit integration)
     defaultHandler: AuthkitHandler as any,
