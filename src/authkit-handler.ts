@@ -48,14 +48,110 @@ app.get("/authorize", async (c) => {
         return c.text("Invalid request", 400);
     }
 
-    // Redirect to WorkOS AuthKit with Magic Auth enabled
+    // Check for session cookie from centralized login (panel.wtyczki.ai)
+    const cookieHeader = c.req.header('Cookie');
+    let sessionToken: string | null = null;
+
+    if (cookieHeader) {
+        const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+            const [key, value] = cookie.trim().split('=');
+            acc[key] = value;
+            return acc;
+        }, {} as Record<string, string>);
+        sessionToken = cookies['workos_session'] || null;
+    }
+
+    // If no session, redirect to centralized custom login at panel.wtyczki.ai
+    if (!sessionToken && c.env.USER_SESSIONS) {
+        console.log('🔐 [NBP OAuth] No session found, redirecting to centralized custom login');
+        const loginUrl = new URL('https://panel.wtyczki.ai/auth/login-custom');
+        loginUrl.searchParams.set('return_to', c.req.url);
+        return Response.redirect(loginUrl.toString(), 302);
+    }
+
+    // Validate session if present
+    if (sessionToken && c.env.USER_SESSIONS) {
+        const sessionData = await c.env.USER_SESSIONS.get(
+            `workos_session:${sessionToken}`,
+            'json'
+        );
+
+        if (!sessionData) {
+            console.log('🔐 [NBP OAuth] Invalid session, redirecting to centralized custom login');
+            const loginUrl = new URL('https://panel.wtyczki.ai/auth/login-custom');
+            loginUrl.searchParams.set('return_to', c.req.url);
+            return Response.redirect(loginUrl.toString(), 302);
+        }
+
+        const session = sessionData as { expires_at: number; user_id: string; email: string };
+
+        // Check expiration
+        if (session.expires_at < Date.now()) {
+            console.log('🔐 [NBP OAuth] Session expired, redirecting to centralized custom login');
+            const loginUrl = new URL('https://panel.wtyczki.ai/auth/login-custom');
+            loginUrl.searchParams.set('return_to', c.req.url);
+            return Response.redirect(loginUrl.toString(), 302);
+        }
+
+        // Session valid - user already authenticated via centralized login
+        // Complete OAuth flow directly without redirecting to WorkOS again
+        console.log(`✅ [NBP OAuth] Valid session found for user: ${session.email}`);
+
+        // Load full user data from database
+        const dbUser = await getUserByEmail(c.env.DB, session.email);
+
+        if (!dbUser) {
+            console.log(`❌ [NBP OAuth] User not found in database: ${session.email}`);
+            return c.html(formatPurchaseRequiredPage(session.email), 403);
+        }
+
+        if (dbUser.is_deleted === 1) {
+            console.log(`❌ [NBP OAuth] Account deleted: ${session.email}`);
+            return c.html(formatAccountDeletedPage(), 403);
+        }
+
+        // Complete OAuth authorization directly (skip WorkOS redirect since user already authenticated)
+        const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
+            request: oauthReqInfo,
+            userId: session.user_id,
+            metadata: {},
+            scope: [],
+            props: {
+                accessToken: '', // Not needed since we're using session-based auth
+                organizationId: undefined,
+                permissions: [],
+                refreshToken: '',
+                user: {
+                    id: session.user_id,
+                    email: session.email,
+                    emailVerified: true,
+                    profilePictureUrl: null,
+                    firstName: null,
+                    lastName: null,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    lastSignInAt: new Date().toISOString(),
+                    locale: null,
+                    externalId: null,
+                    metadata: {},
+                    object: 'user' as const,
+                },
+                userId: dbUser.user_id,
+                email: dbUser.email,
+            } satisfies Props,
+        });
+
+        return Response.redirect(redirectTo);
+    }
+
+    // No session - this shouldn't happen as we redirect above, but fallback to WorkOS
+    console.log('⚠️ [NBP OAuth] No session handling - falling back to WorkOS');
     return Response.redirect(
         c.get("workOS").userManagement.getAuthorizationUrl({
-            provider: "authkit", // Enables Magic Auth (6-digit email code)
-            clientId: c.env.WORKOS_CLIENT_ID, // WorkOS application client ID
+            provider: "authkit",
+            clientId: c.env.WORKOS_CLIENT_ID,
             redirectUri: new URL("/callback", c.req.url).href,
-            // Pass the MCP client ID in state so we can use it in callback
-            state: btoa(JSON.stringify(oauthReqInfo)), // Store OAuth request state including MCP client ID
+            state: btoa(JSON.stringify(oauthReqInfo)),
         }),
     );
 });
