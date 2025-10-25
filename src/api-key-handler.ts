@@ -209,10 +209,10 @@ export async function handleApiKeyRequest(
     // 5. Handle the MCP request using the appropriate transport
     if (pathname === "/sse") {
       return await handleSSETransport(server, request);
+    } else if (pathname === "/mcp") {
+      return await handleHTTPTransport(server, request, env, userId, dbUser.email);
     } else {
-      // For now, only SSE is implemented
-      // HTTP transport (/mcp) can be added later if needed
-      return jsonError("Only SSE transport is supported with API keys currently", 400);
+      return jsonError("Invalid endpoint. Use /sse or /mcp", 400);
     }
   } catch (error) {
     console.error("[API Key Auth] Error:", error);
@@ -508,6 +508,464 @@ async function getOrCreateServer(
     `✅ [LRU Cache] Server created and cached for user ${userId} (cache size: ${serverCache.size}/${MAX_CACHED_SERVERS})`
   );
   return server;
+}
+
+/**
+ * Handle HTTP (Streamable HTTP) transport for MCP protocol
+ *
+ * Streamable HTTP is the modern MCP transport protocol that replaced SSE.
+ * It uses standard HTTP POST requests with JSON-RPC 2.0 protocol.
+ *
+ * Supported JSON-RPC methods:
+ * - initialize: Protocol handshake and capability negotiation
+ * - tools/list: List all available tools
+ * - tools/call: Execute a specific tool
+ *
+ * @param server - Configured MCP server instance
+ * @param request - Incoming HTTP POST request with JSON-RPC message
+ * @param env - Cloudflare Workers environment
+ * @param userId - User ID for logging
+ * @param userEmail - User email for logging
+ * @returns JSON-RPC response
+ */
+async function handleHTTPTransport(
+  server: McpServer,
+  request: Request,
+  env: Env,
+  userId: string,
+  userEmail: string
+): Promise<Response> {
+  console.log(`📡 [API Key Auth] HTTP transport request from ${userEmail}`);
+
+  try {
+    // Parse JSON-RPC request
+    const jsonRpcRequest = await request.json() as {
+      jsonrpc: string;
+      id: number | string;
+      method: string;
+      params?: any;
+    };
+
+    console.log(`📨 [HTTP] Method: ${jsonRpcRequest.method}, ID: ${jsonRpcRequest.id}`);
+
+    // Validate JSON-RPC 2.0 format
+    if (jsonRpcRequest.jsonrpc !== "2.0") {
+      return jsonRpcResponse(jsonRpcRequest.id, null, {
+        code: -32600,
+        message: "Invalid Request: jsonrpc must be '2.0'",
+      });
+    }
+
+    // Route to appropriate handler based on method
+    switch (jsonRpcRequest.method) {
+      case "initialize":
+        return handleInitialize(jsonRpcRequest);
+
+      case "ping":
+        return handlePing(jsonRpcRequest);
+
+      case "tools/list":
+        return await handleToolsList(server, jsonRpcRequest);
+
+      case "tools/call":
+        return await handleToolsCall(server, jsonRpcRequest, env, userId, userEmail);
+
+      default:
+        return jsonRpcResponse(jsonRpcRequest.id, null, {
+          code: -32601,
+          message: `Method not found: ${jsonRpcRequest.method}`,
+        });
+    }
+  } catch (error) {
+    console.error("❌ [HTTP] Error:", error);
+    return jsonRpcResponse("error", null, {
+      code: -32700,
+      message: `Parse error: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+/**
+ * Handle initialize request (MCP protocol handshake)
+ */
+function handleInitialize(request: {
+  jsonrpc: string;
+  id: number | string;
+  method: string;
+  params?: any;
+}): Response {
+  console.log("✅ [HTTP] Initialize request");
+
+  return jsonRpcResponse(request.id, {
+    protocolVersion: "2024-11-05",
+    capabilities: {
+      tools: {},
+    },
+    serverInfo: {
+      name: "NBP Exchange MCP",
+      version: "1.0.0",
+    },
+  });
+}
+
+/**
+ * Handle ping request (health check)
+ */
+function handlePing(request: {
+  jsonrpc: string;
+  id: number | string;
+  method: string;
+  params?: any;
+}): Response {
+  console.log("✅ [HTTP] Ping request");
+
+  return jsonRpcResponse(request.id, {});
+}
+
+/**
+ * Handle tools/list request (list all available tools)
+ */
+async function handleToolsList(
+  server: McpServer,
+  request: {
+    jsonrpc: string;
+    id: number | string;
+    method: string;
+    params?: any;
+  }
+): Promise<Response> {
+  console.log("✅ [HTTP] Tools list request");
+
+  // Manually define tools since McpServer doesn't expose listTools()
+  // These match the tools registered in getOrCreateServer()
+  const tools = [
+    {
+      name: "getCurrencyRate",
+      description:
+        "Get current or historical buy/sell exchange rates for a specific currency from the Polish National Bank (NBP). " +
+        "Returns bid (buy) and ask (sell) prices for the specified date or most recent trading day. " +
+        "⚠️ This tool costs 1 token per use.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          currencyCode: {
+            type: "string",
+            enum: ["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"],
+            description: "Three-letter ISO 4217 currency code",
+          },
+          date: {
+            type: "string",
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+            description:
+              "Optional: Specific date in YYYY-MM-DD format. If omitted, returns the most recent available rate.",
+          },
+        },
+        required: ["currencyCode"],
+      },
+    },
+    {
+      name: "getGoldPrice",
+      description:
+        "Get the official gold price in PLN per gram from the Polish National Bank (NBP). " +
+        "Returns the price for a specific date or the most recent trading day. " +
+        "⚠️ This tool costs 1 token per use.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          date: {
+            type: "string",
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+            description:
+              "Optional: Specific date in YYYY-MM-DD format. If omitted, returns the most recent available price.",
+          },
+        },
+      },
+    },
+    {
+      name: "getCurrencyHistory",
+      description:
+        "Get historical currency exchange rate series over a date range from the Polish National Bank (NBP). " +
+        "Returns bid/ask prices for each trading day in the range. Maximum 93 days of data. " +
+        "⚠️ This tool costs 1 token per use.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          currencyCode: {
+            type: "string",
+            enum: ["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"],
+            description: "Three-letter ISO 4217 currency code",
+          },
+          startDate: {
+            type: "string",
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+            description: "Start date in YYYY-MM-DD format",
+          },
+          endDate: {
+            type: "string",
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+            description: "End date in YYYY-MM-DD format (max 93 days from start)",
+          },
+        },
+        required: ["currencyCode", "startDate", "endDate"],
+      },
+    },
+  ];
+
+  return jsonRpcResponse(request.id, {
+    tools,
+  });
+}
+
+/**
+ * Handle tools/call request (execute a tool)
+ */
+async function handleToolsCall(
+  server: McpServer,
+  request: {
+    jsonrpc: string;
+    id: number | string;
+    method: string;
+    params?: {
+      name: string;
+      arguments?: Record<string, any>;
+    };
+  },
+  env: Env,
+  userId: string,
+  userEmail: string
+): Promise<Response> {
+  if (!request.params || !request.params.name) {
+    return jsonRpcResponse(request.id, null, {
+      code: -32602,
+      message: "Invalid params: name is required",
+    });
+  }
+
+  const toolName = request.params.name;
+  const toolArgs = request.params.arguments || {};
+
+  console.log(`🔧 [HTTP] Tool call: ${toolName} by ${userEmail}`, toolArgs);
+
+  try {
+    // Execute tool logic based on tool name
+    // This duplicates the logic from getOrCreateServer() but is necessary
+    // because McpServer doesn't expose a way to call tools directly
+
+    let result: any;
+
+    switch (toolName) {
+      case "getCurrencyRate":
+        result = await executeCurrencyRateTool(toolArgs, env, userId);
+        break;
+
+      case "getGoldPrice":
+        result = await executeGoldPriceTool(toolArgs, env, userId);
+        break;
+
+      case "getCurrencyHistory":
+        result = await executeCurrencyHistoryTool(toolArgs, env, userId);
+        break;
+
+      default:
+        return jsonRpcResponse(request.id, null, {
+          code: -32601,
+          message: `Unknown tool: ${toolName}`,
+        });
+    }
+
+    console.log(`✅ [HTTP] Tool ${toolName} completed successfully`);
+
+    return jsonRpcResponse(request.id, result);
+  } catch (error) {
+    console.error(`❌ [HTTP] Tool ${toolName} failed:`, error);
+    return jsonRpcResponse(request.id, null, {
+      code: -32603,
+      message: `Tool execution error: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+/**
+ * Execute getCurrencyRate tool
+ */
+async function executeCurrencyRateTool(
+  args: Record<string, any>,
+  env: Env,
+  userId: string
+): Promise<any> {
+  const TOOL_COST = 1;
+  const TOOL_NAME = "getCurrencyRate";
+  const actionId = crypto.randomUUID();
+
+  const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+
+  if (balanceCheck.userDeleted) {
+    return {
+      content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
+      isError: true,
+    };
+  }
+
+  if (!balanceCheck.sufficient) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  const result = await fetchCurrencyRate(args.currencyCode, args.date);
+
+  await consumeTokensWithRetry(
+    env.DB,
+    userId,
+    TOOL_COST,
+    "nbp-exchange-mcp",
+    TOOL_NAME,
+    args,
+    result,
+    true,
+    actionId
+  );
+
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+  };
+}
+
+/**
+ * Execute getGoldPrice tool
+ */
+async function executeGoldPriceTool(
+  args: Record<string, any>,
+  env: Env,
+  userId: string
+): Promise<any> {
+  const TOOL_COST = 1;
+  const TOOL_NAME = "getGoldPrice";
+  const actionId = crypto.randomUUID();
+
+  const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+
+  if (balanceCheck.userDeleted) {
+    return {
+      content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
+      isError: true,
+    };
+  }
+
+  if (!balanceCheck.sufficient) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  const result = await fetchGoldPrice(args.date);
+
+  await consumeTokensWithRetry(
+    env.DB,
+    userId,
+    TOOL_COST,
+    "nbp-exchange-mcp",
+    TOOL_NAME,
+    args,
+    result,
+    true,
+    actionId
+  );
+
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+  };
+}
+
+/**
+ * Execute getCurrencyHistory tool
+ */
+async function executeCurrencyHistoryTool(
+  args: Record<string, any>,
+  env: Env,
+  userId: string
+): Promise<any> {
+  const TOOL_COST = 1;
+  const TOOL_NAME = "getCurrencyHistory";
+  const actionId = crypto.randomUUID();
+
+  const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+
+  if (balanceCheck.userDeleted) {
+    return {
+      content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
+      isError: true,
+    };
+  }
+
+  if (!balanceCheck.sufficient) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  const result = await fetchCurrencyHistory(args.currencyCode, args.startDate, args.endDate);
+
+  await consumeTokensWithRetry(
+    env.DB,
+    userId,
+    TOOL_COST,
+    "nbp-exchange-mcp",
+    TOOL_NAME,
+    args,
+    result,
+    true,
+    actionId
+  );
+
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+  };
+}
+
+/**
+ * Create a JSON-RPC 2.0 response
+ */
+function jsonRpcResponse(
+  id: number | string,
+  result: any = null,
+  error: { code: number; message: string } | null = null
+): Response {
+  const response: any = {
+    jsonrpc: "2.0",
+    id,
+  };
+
+  if (error) {
+    response.error = error;
+  } else {
+    response.result = result;
+  }
+
+  return new Response(JSON.stringify(response), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
 }
 
 /**
