@@ -65,6 +65,39 @@ export async function getUserByEmail(
 }
 
 /**
+ * Query user from database by user ID
+ *
+ * @param db - D1 Database instance
+ * @param userId - User's UUID
+ * @returns User record if found, null otherwise
+ */
+export async function getUserById(
+    db: D1Database,
+    userId: string
+): Promise<DatabaseUser | null> {
+    try {
+        console.log(`[NBP Token Utils] Querying user by ID: ${userId}`);
+
+        // SECURITY: Check is_deleted to prevent deleted users from authenticating
+        const result = await db
+            .prepare('SELECT * FROM users WHERE user_id = ? AND is_deleted = 0')
+            .bind(userId)
+            .first<DatabaseUser>();
+
+        if (!result) {
+            console.log(`[NBP Token Utils] User not found in database: ${userId}`);
+            return null;
+        }
+
+        console.log(`[NBP Token Utils] User found: ${result.email}, balance: ${result.current_token_balance} tokens`);
+        return result;
+    } catch (error) {
+        console.error('[NBP Token Utils] Error querying user by ID:', error);
+        throw new Error('Failed to query user from database');
+    }
+}
+
+/**
  * Format insufficient tokens error message in Polish
  *
  * Creates a user-friendly error message with:

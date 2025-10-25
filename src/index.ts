@@ -1,40 +1,45 @@
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { NbpMCP } from "./server";
 import { AuthkitHandler } from "./authkit-handler";
+import { handleApiKeyRequest } from "./api-key-handler";
+import type { Env } from "./types";
 
 // Export the McpAgent class for Cloudflare Workers
 export { NbpMCP };
 
 /**
- * NBP Exchange MCP Server with WorkOS Authentication
+ * NBP Exchange MCP Server with Dual Authentication Support
  *
- * This MCP server is protected by OAuth 2.1 authentication using WorkOS AuthKit.
- * Users must authenticate via Magic Auth (6-digit email code) before accessing NBP tools.
+ * This MCP server supports TWO authentication methods:
  *
- * OAuth Endpoints (automatically handled by OAuthProvider):
+ * 1. OAuth 2.1 (WorkOS AuthKit) - For OAuth-capable clients
+ *    - Flow: Client → /authorize → WorkOS → Magic Auth → /callback → Tools
+ *    - Used by: Claude Desktop, ChatGPT, OAuth-capable clients
+ *    - Endpoints: /authorize, /callback, /token, /register
+ *
+ * 2. API Key Authentication - For non-OAuth clients
+ *    - Flow: Client sends Authorization: Bearer wtyk_XXX → Validate → Tools
+ *    - Used by: AnythingLLM, Cursor IDE, custom scripts
+ *    - Endpoints: /sse, /mcp (with wtyk_ API key in header)
+ *
+ * MCP Endpoints (support both auth methods):
+ * - /sse - Server-Sent Events transport (for AnythingLLM, Claude Desktop)
+ * - /mcp - Streamable HTTP transport (for ChatGPT and modern clients)
+ *
+ * OAuth Endpoints (OAuth only):
  * - /authorize - Initiates OAuth flow, redirects to WorkOS AuthKit
  * - /callback - Handles OAuth callback from WorkOS
  * - /token - Token endpoint for OAuth clients
  * - /register - Dynamic Client Registration endpoint
  *
- * MCP Endpoints (protected by authentication):
- * - /sse - Server-Sent Events transport (legacy, for Claude Desktop)
- * - /mcp - Streamable HTTP transport (new standard, for ChatGPT and modern clients)
- *
- * Authentication Flow:
- * 1. MCP client connects and initiates OAuth
- * 2. User redirected to WorkOS AuthKit
- * 3. User enters email → receives 6-digit Magic Auth code
- * 4. User enters code → WorkOS validates
- * 5. OAuth completes, tokens issued
- * 6. MCP client can now access protected tools
- *
  * Available Tools (after authentication):
- * - getCurrencyRate: Get current/historical buy/sell rates for currencies
- * - getGoldPrice: Get NBP official gold price
- * - getCurrencyHistory: Get historical rate series over date range
+ * - getCurrencyRate: Get current/historical buy/sell rates for currencies (1 token)
+ * - getGoldPrice: Get NBP official gold price (1 token)
+ * - getCurrencyHistory: Get historical rate series over date range (1 token)
  */
-export default new OAuthProvider({
+
+// Create OAuthProvider instance (used when OAuth authentication is needed)
+const oauthProvider = new OAuthProvider({
     // Dual transport support (SSE + Streamable HTTP)
     // This ensures compatibility with all MCP clients (Claude, ChatGPT, etc.)
     apiHandlers: {
@@ -50,3 +55,74 @@ export default new OAuthProvider({
     tokenEndpoint: "/token",
     clientRegistrationEndpoint: "/register",
 });
+
+/**
+ * Custom fetch handler with dual authentication support
+ *
+ * This handler detects the authentication method and routes requests accordingly:
+ * - API key (wtyk_*) → Direct API key authentication
+ * - OAuth token or no auth → OAuth flow via OAuthProvider
+ */
+export default {
+    async fetch(
+        request: Request,
+        env: Env,
+        ctx: ExecutionContext
+    ): Promise<Response> {
+        try {
+            const url = new URL(request.url);
+            const authHeader = request.headers.get("Authorization");
+
+            // Check for API key authentication on MCP endpoints
+            if (isApiKeyRequest(url.pathname, authHeader)) {
+                console.log(`🔐 [Dual Auth] API key request detected: ${url.pathname}`);
+                return await handleApiKeyRequest(request, env, ctx, url.pathname);
+            }
+
+            // Otherwise, use OAuth flow
+            console.log(`🔐 [Dual Auth] OAuth request: ${url.pathname}`);
+            return await oauthProvider.fetch(request, env, ctx);
+
+        } catch (error) {
+            console.error("[Dual Auth] Error:", error);
+            return new Response(
+                JSON.stringify({
+                    error: "Internal server error",
+                    message: error instanceof Error ? error.message : String(error),
+                }),
+                {
+                    status: 500,
+                    headers: { "Content-Type": "application/json" },
+                }
+            );
+        }
+    },
+};
+
+/**
+ * Detect if request should use API key authentication
+ *
+ * Criteria:
+ * 1. Must be an MCP endpoint (/sse or /mcp)
+ * 2. Must have Authorization header with API key (starts with wtyk_)
+ *
+ * OAuth endpoints (/authorize, /callback, /token, /register) are NEVER intercepted.
+ *
+ * @param pathname - Request pathname
+ * @param authHeader - Authorization header value
+ * @returns true if API key request, false otherwise
+ */
+function isApiKeyRequest(pathname: string, authHeader: string | null): boolean {
+    // Only intercept MCP transport endpoints
+    if (pathname !== "/sse" && pathname !== "/mcp") {
+        return false;
+    }
+
+    // Check if Authorization header contains API key
+    if (!authHeader) {
+        return false;
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    return token.startsWith("wtyk_");
+}
