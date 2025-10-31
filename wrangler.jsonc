@@ -54,6 +54,31 @@
     }
   ],
 
+  /**
+   * REQUIRED: Custom Domain for production deployment
+   */
+  "routes": [
+    {
+      "pattern": "nbp-exchange-mcp.wtyczki.ai",
+      "custom_domain": true
+    }
+  ],
+
+  /**
+   * SECURITY: Disable workers.dev subdomain (RECOMMENDED)
+   *
+   * Since all production traffic uses Custom Domains, the workers.dev subdomain
+   * serves no production purpose and should be disabled to minimize attack surface.
+   *
+   * Benefits:
+   * - Prevents exposure of development code via Preview URLs
+   * - Reduces reconnaissance opportunities for attackers
+   * - Aligns with security best practices (as of wrangler v4.44.0+)
+   *
+   * Note: Disabling workers.dev also disables Preview URLs by default.
+   */
+  "workers_dev": false,
+
   "observability": {
     "enabled": true
   }
