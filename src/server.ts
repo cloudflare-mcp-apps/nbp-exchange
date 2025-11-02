@@ -6,7 +6,7 @@ import type { Env } from "./types";
 import type { Props } from "./props";
 import { checkBalance, consumeTokensWithRetry } from "./tokenConsumption";
 import { formatInsufficientTokensError, formatAccountDeletedError } from "./tokenUtils";
-import { sanitizeOutput, redactPII } from '@pilpat/mcp-security';
+import { sanitizeOutput, redactPII } from 'pilpat-mcp-security';
 
 /**
  * NBP Exchange MCP Server with WorkOS Authentication

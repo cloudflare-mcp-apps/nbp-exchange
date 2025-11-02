@@ -12,11 +12,11 @@
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.0.11",
     "@modelcontextprotocol/sdk": "^1.18.2",
-    "@pilpat/mcp-security": "^1.1.0",
     "@workos-inc/node": "^7.70.0",
     "agents": "^0.2.4",
     "hono": "^4.10.4",
     "jose": "^6.1.0",
+    "pilpat-mcp-security": "^1.1.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

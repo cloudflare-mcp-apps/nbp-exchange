@@ -22,7 +22,7 @@ import { z } from "zod";
 import { fetchCurrencyRate, fetchGoldPrice, fetchCurrencyHistory } from "./nbp-client";
 import { checkBalance, consumeTokensWithRetry } from "./tokenConsumption";
 import { formatInsufficientTokensError, formatAccountDeletedError } from "./tokenUtils";
-import { sanitizeOutput, redactPII } from '@pilpat/mcp-security';
+import { sanitizeOutput, redactPII } from 'pilpat-mcp-security';
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
 /**

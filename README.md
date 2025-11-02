@@ -172,7 +172,7 @@ npx @modelcontextprotocol/inspector
 
 ## Security Features (Phase 2)
 
-This server implements comprehensive output security powered by `@pilpat/mcp-security@1.1.0`:
+This server implements comprehensive output security powered by `pilpat-mcp-security@1.1.0`:
 
 ### Output Sanitization
 - **HTML/XSS Removal**: Strips all HTML tags and script content
