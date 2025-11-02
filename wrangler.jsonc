@@ -21,7 +21,7 @@
     {
       "new_sqlite_classes": ["NbpMCP"],
       "tag": "v1"
-    }
+    },
   ],
 
   "durable_objects": {
@@ -29,7 +29,7 @@
       {
         "class_name": "NbpMCP",
         "name": "MCP_OBJECT"
-      }
+      },
     ]
   },
 
@@ -43,15 +43,15 @@
       "binding": "USER_SESSIONS",
       "id": "e5ad189139cd44f38ba0224c3d596c73",
       "preview_id": "49c43fb4d6e242db87fd885ba46b5a1d"
-    }
+    },
   ],
 
   "d1_databases": [
     {
-      "binding": "DB",
+      "binding": "TOKEN_DB",
       "database_name": "mcp-tokens-database",
       "database_id": "ebb389aa-2d65-4d38-a0da-50c7da9dfe8b"
-    }
+    },
   ],
 
   /**
@@ -61,7 +61,7 @@
     {
       "pattern": "nbp-exchange-mcp.wtyczki.ai",
       "custom_domain": true
-    }
+    },
   ],
 
   /**
@@ -81,5 +81,8 @@
 
   "observability": {
     "enabled": true
-  }
+  },
+  "vars": {
+    "AI_GATEWAY_ID": "mcp-production-gateway"
+  },
 }

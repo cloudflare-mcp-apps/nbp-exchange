@@ -12,7 +12,7 @@ export interface Env {
     MCP_OBJECT: DurableObjectNamespace;
 
     /** D1 Database for token management (shared with mcp-token-system) */
-    DB: D1Database;
+    TOKEN_DB: D1Database;
 
     /** WorkOS Client ID (public, used to initiate OAuth flows) */
     WORKOS_CLIENT_ID: string;
@@ -22,6 +22,18 @@ export interface Env {
 
     /** KV namespace for custom login session storage (optional, required for custom branded login) */
     USER_SESSIONS?: KVNamespace;
+
+    /**
+     * Cloudflare AI Gateway Configuration
+     *
+     * Route all AI requests through AI Gateway for:
+     * - Authenticated access control
+     * - Rate limiting (60 requests/hour per user)
+     * - Response caching (1-hour TTL)
+     * - Analytics and monitoring
+     */
+    AI_GATEWAY_ID: string;
+    AI_GATEWAY_TOKEN: string;
 }
 
 // NBP API response types
