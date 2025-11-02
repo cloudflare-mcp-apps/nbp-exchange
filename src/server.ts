@@ -6,6 +6,7 @@ import type { Env } from "./types";
 import type { Props } from "./props";
 import { checkBalance, consumeTokensWithRetry } from "./tokenConsumption";
 import { formatInsufficientTokensError, formatAccountDeletedError } from "./tokenUtils";
+import { sanitizeOutput, redactPII } from '@pilpat/mcp-security';
 
 /**
  * NBP Exchange MCP Server with WorkOS Authentication
@@ -77,7 +78,7 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     }
 
                     // 2. Check token balance (ALWAYS query database for current balance)
-                    const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
+                    const balanceCheck = await checkBalance(this.env.TOKEN_DB, userId, TOOL_COST);
 
                     // 3a. UX IMPROVEMENT: If account deleted, show specific error message
                     if (balanceCheck.userDeleted) {
@@ -104,24 +105,51 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     // 4. Execute the NBP API call and capture result
                     const result = await fetchCurrencyRate(currencyCode, date);
 
+                    // 4.5. Security Processing (Phase 2)
+                    const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+                        removeHtml: true,
+                        removeControlChars: true,
+                        normalizeWhitespace: true,
+                        maxLength: 5000
+                    });
+
+                    const { redacted, detectedPII } = redactPII(sanitized, {
+                        redactEmails: false,           // v1.1.0+ default (business use case)
+                        redactPhones: true,
+                        redactCreditCards: true,
+                        redactSSN: true,
+                        redactBankAccounts: true,
+                        redactPESEL: true,             // Polish national ID
+                        redactPolishIdCard: true,      // Polish ID card
+                        redactPolishPassport: true,    // Polish passport
+                        redactPolishPhones: true,      // Polish phone numbers
+                        placeholder: '[REDACTED]'
+                    });
+
+                    if (detectedPII.length > 0) {
+                        console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+                    }
+
+                    const finalResult = redacted;
+
                     // 5. Consume tokens WITH RETRY and idempotency protection
                     await consumeTokensWithRetry(
-                        this.env.DB,
+                        this.env.TOKEN_DB,
                         userId,
                         TOOL_COST,
                         "nbp-exchange-mcp",
                         TOOL_NAME,
                         { currencyCode, date },  // action params
-                        result,                   // action result - logged for audit
+                        finalResult,              // action result - sanitized & redacted for audit
                         true,                     // success flag
                         actionId                  // pre-generated for idempotency
                     );
 
-                    // 6. Return successful result
+                    // 6. Return successful result (sanitized & redacted)
                     return {
                         content: [{
                             type: "text" as const,
-                            text: JSON.stringify(result, null, 2)
+                            text: finalResult
                         }]
                     };
                 } catch (error) {
@@ -170,7 +198,7 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     }
 
                     // 2. Check token balance (ALWAYS query database for current balance)
-                    const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
+                    const balanceCheck = await checkBalance(this.env.TOKEN_DB, userId, TOOL_COST);
 
                     // 3a. UX IMPROVEMENT: If account deleted, show specific error message
                     if (balanceCheck.userDeleted) {
@@ -197,24 +225,51 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     // 4. Execute the NBP API call and capture result
                     const result = await fetchGoldPrice(date);
 
+                    // 4.5. Security Processing (Phase 2)
+                    const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+                        removeHtml: true,
+                        removeControlChars: true,
+                        normalizeWhitespace: true,
+                        maxLength: 5000
+                    });
+
+                    const { redacted, detectedPII } = redactPII(sanitized, {
+                        redactEmails: false,           // v1.1.0+ default (business use case)
+                        redactPhones: true,
+                        redactCreditCards: true,
+                        redactSSN: true,
+                        redactBankAccounts: true,
+                        redactPESEL: true,             // Polish national ID
+                        redactPolishIdCard: true,      // Polish ID card
+                        redactPolishPassport: true,    // Polish passport
+                        redactPolishPhones: true,      // Polish phone numbers
+                        placeholder: '[REDACTED]'
+                    });
+
+                    if (detectedPII.length > 0) {
+                        console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+                    }
+
+                    const finalResult = redacted;
+
                     // 5. Consume tokens WITH RETRY and idempotency protection
                     await consumeTokensWithRetry(
-                        this.env.DB,
+                        this.env.TOKEN_DB,
                         userId,
                         TOOL_COST,
                         "nbp-exchange-mcp",
                         TOOL_NAME,
                         { date },     // action params
-                        result,       // action result - logged for audit
+                        finalResult,  // action result - sanitized & redacted for audit
                         true,         // success flag
                         actionId      // pre-generated for idempotency
                     );
 
-                    // 6. Return successful result
+                    // 6. Return successful result (sanitized & redacted)
                     return {
                         content: [{
                             type: "text" as const,
-                            text: JSON.stringify(result, null, 2)
+                            text: finalResult
                         }]
                     };
                 } catch (error) {
@@ -300,7 +355,7 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     }
 
                     // 2. Check token balance (ALWAYS query database for current balance)
-                    const balanceCheck = await checkBalance(this.env.DB, userId, TOOL_COST);
+                    const balanceCheck = await checkBalance(this.env.TOKEN_DB, userId, TOOL_COST);
 
                     // 3a. UX IMPROVEMENT: If account deleted, show specific error message
                     if (balanceCheck.userDeleted) {
@@ -327,24 +382,51 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     // 4. Execute the NBP API call and capture result
                     const result = await fetchCurrencyHistory(currencyCode, startDate, endDate);
 
+                    // 4.5. Security Processing (Phase 2)
+                    const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+                        removeHtml: true,
+                        removeControlChars: true,
+                        normalizeWhitespace: true,
+                        maxLength: 5000
+                    });
+
+                    const { redacted, detectedPII } = redactPII(sanitized, {
+                        redactEmails: false,           // v1.1.0+ default (business use case)
+                        redactPhones: true,
+                        redactCreditCards: true,
+                        redactSSN: true,
+                        redactBankAccounts: true,
+                        redactPESEL: true,             // Polish national ID
+                        redactPolishIdCard: true,      // Polish ID card
+                        redactPolishPassport: true,    // Polish passport
+                        redactPolishPhones: true,      // Polish phone numbers
+                        placeholder: '[REDACTED]'
+                    });
+
+                    if (detectedPII.length > 0) {
+                        console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+                    }
+
+                    const finalResult = redacted;
+
                     // 5. Consume tokens WITH RETRY and idempotency protection
                     await consumeTokensWithRetry(
-                        this.env.DB,
+                        this.env.TOKEN_DB,
                         userId,
                         TOOL_COST,
                         "nbp-exchange-mcp",
                         TOOL_NAME,
                         { currencyCode, startDate, endDate },  // action params
-                        result,                                 // action result - logged for audit
+                        finalResult,                            // action result - sanitized & redacted for audit
                         true,                                   // success flag
                         actionId                                // pre-generated for idempotency
                     );
 
-                    // 6. Return successful result
+                    // 6. Return successful result (sanitized & redacted)
                     return {
                         content: [{
                             type: "text" as const,
-                            text: JSON.stringify(result, null, 2)
+                            text: finalResult
                         }]
                     };
                 } catch (error) {

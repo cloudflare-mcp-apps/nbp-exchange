@@ -7,6 +7,7 @@ A Model Context Protocol (MCP) server for accessing Polish National Bank (NBP) e
 - Get current & historical exchange rates for 12 major currencies
 - Query official NBP gold prices
 - Historical data series (up to 93 days)
+- **Phase 2 Security**: Output sanitization and PII redaction with Polish market support
 
 ## Quick Start
 
@@ -168,6 +169,43 @@ npx @modelcontextprotocol/inspector
 # Open browser: http://localhost:5173
 # Connect to: http://localhost:8787/sse
 ```
+
+## Security Features (Phase 2)
+
+This server implements comprehensive output security powered by `@pilpat/mcp-security@1.1.0`:
+
+### Output Sanitization
+- **HTML/XSS Removal**: Strips all HTML tags and script content
+- **Control Character Stripping**: Removes non-printable control characters
+- **Whitespace Normalization**: Cleans excessive whitespace
+- **Length Limiting**: Maximum 5000 characters per response
+
+### PII Redaction
+- **Credit Cards**: Full card number redaction
+- **SSN/Tax IDs**: Social Security Number protection
+- **Bank Accounts**: Account number redaction
+- **Emails**: Preserved by default (v1.1.0+, configurable)
+- **Phone Numbers**: General phone pattern redaction
+
+### Polish Market Support (EU/GDPR Compliance)
+- **PESEL**: Polish national ID (11 digits, e.g., 44051401359)
+- **Polish ID Card**: Format ABC123456 (3 letters + 6 digits)
+- **Polish Passport**: Format FG1234567 (2 letters + 7 digits)
+- **Polish Phone Numbers**: +48 or 0048 prefix patterns
+
+### Security Logging
+All PII detections are logged for audit purposes:
+```
+[Security] Tool getCurrencyRate: Redacted PII types: pesel, polishPhone
+```
+
+### Expected PII Detection Rate
+**~0%** - NBP API returns public exchange rate data. Any PII detection indicates data contamination and should be investigated immediately.
+
+### Configuration Notes
+- Email redaction is **disabled by default** (v1.1.0+) for business use cases
+- To enable email redaction, see `src/server.ts:117` and `src/api-key-handler.ts:333`
+- NIP (tax ID) and REGON (business registry) are **not redacted** (publicly searchable)
 
 ## Notes
 

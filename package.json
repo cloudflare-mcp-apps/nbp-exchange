@@ -12,6 +12,7 @@
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.0.11",
     "@modelcontextprotocol/sdk": "^1.18.2",
+    "@pilpat/mcp-security": "file:../../packages/mcp-security",
     "@workos-inc/node": "^7.70.0",
     "agents": "^0.2.4",
     "hono": "^4.10.4",

@@ -22,6 +22,7 @@ import { z } from "zod";
 import { fetchCurrencyRate, fetchGoldPrice, fetchCurrencyHistory } from "./nbp-client";
 import { checkBalance, consumeTokensWithRetry } from "./tokenConsumption";
 import { formatInsufficientTokensError, formatAccountDeletedError } from "./tokenUtils";
+import { sanitizeOutput, redactPII } from '@pilpat/mcp-security';
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
 /**
@@ -191,7 +192,7 @@ export async function handleApiKeyRequest(
     }
 
     // 3. Get user from database
-    const dbUser = await getUserById(env.DB, userId);
+    const dbUser = await getUserById(env.TOKEN_DB, userId);
 
     if (!dbUser) {
       // getUserById already checks is_deleted, so null means not found OR deleted
@@ -296,7 +297,7 @@ async function getOrCreateServer(
 
       try {
         // Check balance
-        const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+        const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
 
         if (balanceCheck.userDeleted) {
           return {
@@ -320,21 +321,48 @@ async function getOrCreateServer(
         // Execute tool
         const result = await fetchCurrencyRate(currencyCode, date);
 
+        // Step 4.5: Security Processing (Phase 2)
+        const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+          removeHtml: true,
+          removeControlChars: true,
+          normalizeWhitespace: true,
+          maxLength: 5000
+        });
+
+        const { redacted, detectedPII } = redactPII(sanitized, {
+          redactEmails: false,
+          redactPhones: true,
+          redactCreditCards: true,
+          redactSSN: true,
+          redactBankAccounts: true,
+          redactPESEL: true,
+          redactPolishIdCard: true,
+          redactPolishPassport: true,
+          redactPolishPhones: true,
+          placeholder: '[REDACTED]'
+        });
+
+        if (detectedPII.length > 0) {
+          console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+        }
+
+        const finalResult = redacted;
+
         // Consume tokens
         await consumeTokensWithRetry(
-          env.DB,
+          env.TOKEN_DB,
           userId,
           TOOL_COST,
           "nbp-exchange-mcp",
           TOOL_NAME,
           { currencyCode, date },
-          result,
+          finalResult,
           true,
           actionId
         );
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text: finalResult }],
         };
       } catch (error) {
         return {
@@ -372,7 +400,7 @@ async function getOrCreateServer(
       const actionId = crypto.randomUUID();
 
       try {
-        const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+        const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
 
         if (balanceCheck.userDeleted) {
           return {
@@ -395,20 +423,47 @@ async function getOrCreateServer(
 
         const result = await fetchGoldPrice(date);
 
+        // Step 4.5: Security Processing (Phase 2)
+        const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+          removeHtml: true,
+          removeControlChars: true,
+          normalizeWhitespace: true,
+          maxLength: 5000
+        });
+
+        const { redacted, detectedPII } = redactPII(sanitized, {
+          redactEmails: false,
+          redactPhones: true,
+          redactCreditCards: true,
+          redactSSN: true,
+          redactBankAccounts: true,
+          redactPESEL: true,
+          redactPolishIdCard: true,
+          redactPolishPassport: true,
+          redactPolishPhones: true,
+          placeholder: '[REDACTED]'
+        });
+
+        if (detectedPII.length > 0) {
+          console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+        }
+
+        const finalResult = redacted;
+
         await consumeTokensWithRetry(
-          env.DB,
+          env.TOKEN_DB,
           userId,
           TOOL_COST,
           "nbp-exchange-mcp",
           TOOL_NAME,
           { date },
-          result,
+          finalResult,
           true,
           actionId
         );
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text: finalResult }],
         };
       } catch (error) {
         return {
@@ -449,7 +504,7 @@ async function getOrCreateServer(
       const actionId = crypto.randomUUID();
 
       try {
-        const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+        const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
 
         if (balanceCheck.userDeleted) {
           return {
@@ -472,20 +527,47 @@ async function getOrCreateServer(
 
         const result = await fetchCurrencyHistory(currencyCode, startDate, endDate);
 
+        // Step 4.5: Security Processing (Phase 2)
+        const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+          removeHtml: true,
+          removeControlChars: true,
+          normalizeWhitespace: true,
+          maxLength: 5000
+        });
+
+        const { redacted, detectedPII } = redactPII(sanitized, {
+          redactEmails: false,
+          redactPhones: true,
+          redactCreditCards: true,
+          redactSSN: true,
+          redactBankAccounts: true,
+          redactPESEL: true,
+          redactPolishIdCard: true,
+          redactPolishPassport: true,
+          redactPolishPhones: true,
+          placeholder: '[REDACTED]'
+        });
+
+        if (detectedPII.length > 0) {
+          console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+        }
+
+        const finalResult = redacted;
+
         await consumeTokensWithRetry(
-          env.DB,
+          env.TOKEN_DB,
           userId,
           TOOL_COST,
           "nbp-exchange-mcp",
           TOOL_NAME,
           { currencyCode, startDate, endDate },
-          result,
+          finalResult,
           true,
           actionId
         );
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text: finalResult }],
         };
       } catch (error) {
         return {
@@ -797,7 +879,7 @@ async function executeCurrencyRateTool(
   const TOOL_NAME = "getCurrencyRate";
   const actionId = crypto.randomUUID();
 
-  const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+  const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
 
   if (balanceCheck.userDeleted) {
     return {
@@ -820,20 +902,47 @@ async function executeCurrencyRateTool(
 
   const result = await fetchCurrencyRate(args.currencyCode, args.date);
 
+  // Step 4.5: Security Processing (Phase 2)
+  const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+    removeHtml: true,
+    removeControlChars: true,
+    normalizeWhitespace: true,
+    maxLength: 5000
+  });
+
+  const { redacted, detectedPII } = redactPII(sanitized, {
+    redactEmails: false,
+    redactPhones: true,
+    redactCreditCards: true,
+    redactSSN: true,
+    redactBankAccounts: true,
+    redactPESEL: true,
+    redactPolishIdCard: true,
+    redactPolishPassport: true,
+    redactPolishPhones: true,
+    placeholder: '[REDACTED]'
+  });
+
+  if (detectedPII.length > 0) {
+    console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+  }
+
+  const finalResult = redacted;
+
   await consumeTokensWithRetry(
-    env.DB,
+    env.TOKEN_DB,
     userId,
     TOOL_COST,
     "nbp-exchange-mcp",
     TOOL_NAME,
     args,
-    result,
+    finalResult,
     true,
     actionId
   );
 
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+    content: [{ type: "text" as const, text: finalResult }],
   };
 }
 
@@ -849,7 +958,7 @@ async function executeGoldPriceTool(
   const TOOL_NAME = "getGoldPrice";
   const actionId = crypto.randomUUID();
 
-  const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+  const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
 
   if (balanceCheck.userDeleted) {
     return {
@@ -872,20 +981,47 @@ async function executeGoldPriceTool(
 
   const result = await fetchGoldPrice(args.date);
 
+  // Step 4.5: Security Processing (Phase 2)
+  const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+    removeHtml: true,
+    removeControlChars: true,
+    normalizeWhitespace: true,
+    maxLength: 5000
+  });
+
+  const { redacted, detectedPII } = redactPII(sanitized, {
+    redactEmails: false,
+    redactPhones: true,
+    redactCreditCards: true,
+    redactSSN: true,
+    redactBankAccounts: true,
+    redactPESEL: true,
+    redactPolishIdCard: true,
+    redactPolishPassport: true,
+    redactPolishPhones: true,
+    placeholder: '[REDACTED]'
+  });
+
+  if (detectedPII.length > 0) {
+    console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+  }
+
+  const finalResult = redacted;
+
   await consumeTokensWithRetry(
-    env.DB,
+    env.TOKEN_DB,
     userId,
     TOOL_COST,
     "nbp-exchange-mcp",
     TOOL_NAME,
     args,
-    result,
+    finalResult,
     true,
     actionId
   );
 
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+    content: [{ type: "text" as const, text: finalResult }],
   };
 }
 
@@ -901,7 +1037,7 @@ async function executeCurrencyHistoryTool(
   const TOOL_NAME = "getCurrencyHistory";
   const actionId = crypto.randomUUID();
 
-  const balanceCheck = await checkBalance(env.DB, userId, TOOL_COST);
+  const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
 
   if (balanceCheck.userDeleted) {
     return {
@@ -924,20 +1060,47 @@ async function executeCurrencyHistoryTool(
 
   const result = await fetchCurrencyHistory(args.currencyCode, args.startDate, args.endDate);
 
+  // Step 4.5: Security Processing (Phase 2)
+  const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
+    removeHtml: true,
+    removeControlChars: true,
+    normalizeWhitespace: true,
+    maxLength: 5000
+  });
+
+  const { redacted, detectedPII } = redactPII(sanitized, {
+    redactEmails: false,
+    redactPhones: true,
+    redactCreditCards: true,
+    redactSSN: true,
+    redactBankAccounts: true,
+    redactPESEL: true,
+    redactPolishIdCard: true,
+    redactPolishPassport: true,
+    redactPolishPhones: true,
+    placeholder: '[REDACTED]'
+  });
+
+  if (detectedPII.length > 0) {
+    console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
+  }
+
+  const finalResult = redacted;
+
   await consumeTokensWithRetry(
-    env.DB,
+    env.TOKEN_DB,
     userId,
     TOOL_COST,
     "nbp-exchange-mcp",
     TOOL_NAME,
     args,
-    result,
+    finalResult,
     true,
     actionId
   );
 
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+    content: [{ type: "text" as const, text: finalResult }],
   };
 }
 
