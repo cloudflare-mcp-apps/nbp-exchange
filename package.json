@@ -1,5 +1,5 @@
 {
-  "name": "nbp-exchange-mcp",
+  "name": "nbp-exchange",
   "version": "1.0.0",
   "description": "MCP server for Polish National Bank (NBP) exchange rates",
   "private": true,

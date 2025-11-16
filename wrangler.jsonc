@@ -12,7 +12,7 @@
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "nbp-mcp",
+  "name": "nbp-exchange",
   "main": "src/index.ts",
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
@@ -59,7 +59,7 @@
    */
   "routes": [
     {
-      "pattern": "nbp-exchange-mcp.wtyczki.ai",
+      "pattern": "nbp-exchange.wtyczki.ai",
       "custom_domain": true
     },
   ],

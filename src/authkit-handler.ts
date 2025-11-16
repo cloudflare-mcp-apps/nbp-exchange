@@ -98,7 +98,7 @@ app.get("/authorize", async (c) => {
         console.log(`✅ [NBP OAuth] Valid session found for user: ${session.email}`);
 
         // Load full user data from database
-        const dbUser = await getUserByEmail(c.env.DB, session.email);
+        const dbUser = await getUserByEmail(c.env.TOKEN_DB, session.email);
 
         if (!dbUser) {
             console.log(`❌ [NBP OAuth] User not found in database: ${session.email}`);
@@ -197,7 +197,7 @@ app.get("/callback", async (c) => {
 
     // CRITICAL: Check if user exists in token database
     console.log(`[NBP OAuth] Checking if user exists in database: ${user.email}`);
-    const dbUser = await getUserByEmail(c.env.DB, user.email);
+    const dbUser = await getUserByEmail(c.env.TOKEN_DB, user.email);
 
     // If user not found in database, reject authorization and show purchase page
     if (!dbUser) {
