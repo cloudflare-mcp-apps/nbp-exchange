@@ -48,6 +48,22 @@
 
 * **Primary Domain**: https://nbp-rates.wtyczki.ai
 
+* **AnythingLLM MCP Configuration**:
+```json
+{
+  "mcpServers": {
+    "nbp-exchange": {
+      "url": "https://nbp-rates.wtyczki.ai/mcp",
+      "transport": "http",
+      "headers": {
+        "Authorization": "Bearer wtyk_YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+Note: The server name ("nbp-exchange") is a local identifier - change it to whatever you prefer.
+
 * **Workers AI status (is active, model)**: Not active - no Workers AI binding or usage
 
 * **Caching strategy**: No caching implemented. Rationale: Real-time financial data expected by users; NBP API is free and fast (~100-300ms); rates updated daily (trading days only); TTL management complexity not justified for minimal performance gain.
