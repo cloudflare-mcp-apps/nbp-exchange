@@ -190,7 +190,6 @@ Please retrieve the rate and calculate the total PLN amount clearly.`
             "Returns bid (bank buy) and ask (bank sell) prices in Polish Zloty (PLN) from NBP Table C. " +
             "Use this when you need to know how much a currency costs to exchange at Polish banks. " +
             "Note: NBP only publishes rates on trading days (Mon-Fri, excluding Polish holidays). " +
-            "⚠️ This tool costs 1 token per use.",
             {
                 currencyCode: z.enum([
                     "USD", "EUR", "GBP", "CHF", "AUD", "CAD",
@@ -318,7 +317,6 @@ Please retrieve the rate and calculate the total PLN amount clearly.`
             "Use this for investment analysis, comparing gold prices over time, or checking current gold valuation. " +
             "Note: Prices are only published on trading days (Mon-Fri, excluding holidays). " +
             "Historical data available from January 2, 2013 onwards. " +
-            "⚠️ This tool costs 1 token per use.",
             {
                 date: z.string()
                     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -437,7 +435,6 @@ Please retrieve the rate and calculate the total PLN amount clearly.`
             "Returns buy/sell rates (bid/ask) in PLN for each trading day within the specified period. " +
             "Useful for analyzing currency trends, calculating average rates, or comparing rates across months. " +
             "IMPORTANT: NBP API limit is maximum 93 days per query. Only trading days are included (weekends/holidays are skipped). " +
-            "⚠️ This tool costs 1 token per use.",
             {
                 currencyCode: z.enum([
                     "USD", "EUR", "GBP", "CHF", "AUD", "CAD",

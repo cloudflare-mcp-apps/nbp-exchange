@@ -272,7 +272,6 @@ async function getOrCreateServer(
       "Returns bid (bank buy) and ask (bank sell) prices in Polish Zloty (PLN) from NBP Table C. " +
       "Use this when you need to know how much a currency costs to exchange at Polish banks. " +
       "Note: NBP only publishes rates on trading days (Mon-Fri, excluding Polish holidays). " +
-      "⚠️ This tool costs 1 token per use.",
     {
       currencyCode: z
         .enum(["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"])
@@ -383,7 +382,7 @@ async function getOrCreateServer(
     "getGoldPrice",
     "Get the official gold price from the Polish National Bank (NBP). " +
       "Returns the price for 1 gram of gold with 1000 millesimal fineness (pure gold) in Polish Zloty (PLN). " +
-      "NBP publishes gold prices every trading day. ⚠️ This tool costs 1 token per use.",
+      "NBP publishes gold prices every trading day.",
     {
       date: z
         .string()
@@ -484,7 +483,6 @@ async function getOrCreateServer(
     "getCurrencyHistory",
     "Get historical currency exchange rate series over a date range from the Polish National Bank (NBP). " +
       "Returns bid/ask prices for each trading day in the range. Maximum 93 days of data. " +
-      "⚠️ This tool costs 1 token per use.",
     {
       currencyCode: z
         .enum(["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"])
@@ -726,7 +724,6 @@ async function handleToolsList(
       description:
         "Get current or historical buy/sell exchange rates for a specific currency from the Polish National Bank (NBP). " +
         "Returns bid (buy) and ask (sell) prices for the specified date or most recent trading day. " +
-        "⚠️ This tool costs 1 token per use.",
       inputSchema: {
         type: "object",
         properties: {
@@ -750,7 +747,6 @@ async function handleToolsList(
       description:
         "Get the official gold price in PLN per gram from the Polish National Bank (NBP). " +
         "Returns the price for a specific date or the most recent trading day. " +
-        "⚠️ This tool costs 1 token per use.",
       inputSchema: {
         type: "object",
         properties: {
@@ -768,7 +764,6 @@ async function handleToolsList(
       description:
         "Get historical currency exchange rate series over a date range from the Polish National Bank (NBP). " +
         "Returns bid/ask prices for each trading day in the range. Maximum 93 days of data. " +
-        "⚠️ This tool costs 1 token per use.",
       inputSchema: {
         type: "object",
         properties: {
