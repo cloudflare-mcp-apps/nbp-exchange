@@ -1,6 +1,6 @@
 # NBP Exchange MCP Server - Mini Snapshot
 
-**Generated**: 2025-11-20
+**Generated**: 2025-11-27 (Updated for SDK 1.20+ Migration)
 
 ---
 
@@ -71,9 +71,14 @@ Note: The server name ("nbp-exchange") is a local identifier - change it to what
 ---
 
 **Architecture Notes**:
+- **SDK 1.20+ Features**: registerTool() API, structuredContent field
+  - All 3 tools use registerTool() for cleaner API
+  - structuredContent enables LLM-readable JSON output
+- **Security**: DNS rebinding protection added to API key path (origin whitelist validation)
 - Completely stateless Durable Object (no external API tokens to cache)
 - Uniform pricing: All 3 tools cost 1 token (simplicity over granular pricing)
 - Pre-validation pattern: Date range validated BEFORE token consumption
 - External API: NBP Public REST API (no authentication required)
-- Dual authentication: OAuth (server.ts) + API key (api-key-handler.ts)
-- Security: Step 4.5 implemented in all 6 tool paths (3 OAuth + 3 API key)
+- Dual authentication: OAuth (server.ts) with registerTool() + API key (api-key-handler.ts) with registerTool() + DNS protection
+- PII redaction: Step 4.5 implemented in all 6 tool paths (3 OAuth + 3 API key) with pilpat-mcp-security v1.1.0
+- Dependencies: SDK ^1.20.1, agents ^0.2.14

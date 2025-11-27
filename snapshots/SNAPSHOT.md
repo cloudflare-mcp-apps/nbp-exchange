@@ -1,6 +1,6 @@
 # NBP Exchange MCP Server - Infrastructure Snapshot
 
-**Generated**: 2025-11-20
+**Generated**: 2025-11-27 (Updated for SDK 1.20+ Migration)
 **Repository**: nbp-exchange-mcp
 **Status**: Production
 
@@ -53,9 +53,10 @@
 - `date` (string, optional): Specific date in YYYY-MM-DD format (e.g., '2025-10-01'). If omitted, returns most recent available rate
 
 **Dual Auth Parity**: ✅ Complete
-- OAuth Path: src/server.ts:40-165 (7-Step Token Pattern)
-- API Key Path: src/api-key-handler.ts:269-379 (full implementation)
+- OAuth Path: src/server.ts:40-165 (registerTool() API, 7-Step Token Pattern)
+- API Key Path: src/api-key-handler.ts:269-379 (registerTool() API with DNS protection)
 - Security Processing: Step 4.5 implemented in both paths
+- Both paths use identical tool definitions with structuredContent
 
 **Implementation Details**:
 - External API: NBP Public REST API (https://api.nbp.pl/api)
@@ -97,9 +98,10 @@
 - `date` (string, optional): Specific date in YYYY-MM-DD format (e.g., '2025-10-01'). If omitted, returns most recent available gold price. Must be after 2013-01-02
 
 **Dual Auth Parity**: ✅ Complete
-- OAuth Path: src/server.ts:168-285
-- API Key Path: src/api-key-handler.ts:382-480
+- OAuth Path: src/server.ts:168-285 (registerTool() API, 7-Step Token Pattern)
+- API Key Path: src/api-key-handler.ts:382-480 (registerTool() API with DNS protection)
 - Security Processing: Step 4.5 implemented in both paths
+- Both paths use identical tool definitions with structuredContent
 
 **Implementation Details**:
 - External API: NBP Public REST API
@@ -138,9 +140,10 @@
 - `endDate` (string, required): End date in YYYY-MM-DD format (e.g., '2025-03-31'). Must be after startDate and within 93 days
 
 **Dual Auth Parity**: ✅ Complete
-- OAuth Path: src/server.ts:288-442
-- API Key Path: src/api-key-handler.ts:483-584
+- OAuth Path: src/server.ts:288-442 (registerTool() API, 7-Step Token Pattern)
+- API Key Path: src/api-key-handler.ts:483-584 (registerTool() API with DNS protection)
 - Security Processing: Step 4.5 implemented in both paths
+- Both paths use identical tool definitions with structuredContent
 
 **Implementation Details**:
 - External API: NBP Public REST API
@@ -312,6 +315,36 @@ Both implemented in:
 - OAuth path: src/index.ts routes to McpAgent (Durable Object)
 - API key path: src/api-key-handler.ts custom transport handlers
 
+### SDK 1.20+ Enhancements
+
+**registerTool() API**:
+All 3 tools migrated from `server.tool()` to `registerTool()`:
+```typescript
+server.registerTool(
+  "getCurrencyRate",
+  {
+    title: "Get Currency Rate",     // UI display name
+    description: "Get current...",  // Tool purpose
+    inputSchema: z.object({         // Wrapped in z.object()
+      currencyCode: z.enum([...]).describe("..."),
+      date: z.string().optional().describe("...")
+    })
+  },
+  async (params) => { /* handler */ }
+);
+```
+
+**structuredContent Field**:
+All 6 tool paths (3 OAuth + 3 API key) return structured data:
+```typescript
+return {
+  content: [{ type: "text", text: sanitizedText }],  // User-readable
+  structuredContent: result                           // LLM-readable JSON
+};
+```
+
+**Note**: Completable parameter autocomplete not used (currency codes are fixed enums, less benefit from autocomplete).
+
 ### Pricing Model
 
 **Flat Cost (No Caching)**: All tools charge 1 token regardless of API response
@@ -410,10 +443,10 @@ if (daysDiff > 93) {
 ### Dependencies
 
 **Production**:
-- @modelcontextprotocol/sdk: ^1.18.2
+- @modelcontextprotocol/sdk: ^1.20.1 (registerTool() API, structuredContent, completable)
 - @cloudflare/workers-oauth-provider: ^0.0.11
 - @workos-inc/node: ^7.70.0
-- agents: ^0.2.4 (McpAgent framework)
+- agents: ^0.2.14 (McpAgent framework with SDK 1.20+ support)
 - hono: ^4.10.4 (HTTP routing)
 - jose: ^6.1.0 (JWT handling)
 - pilpat-mcp-security: ^1.1.0 (PII redaction)
@@ -458,11 +491,14 @@ if (daysDiff > 93) {
 |---|---|---|
 | Vendor Hiding | ✅ | NBP is official institution name, not vendor |
 | PII Redaction | ✅ | pilpat-mcp-security v1.1.0 with Polish patterns |
-| Dual Auth Parity | ✅ | OAuth + API key paths fully implemented |
+| Dual Auth Parity | ✅ | OAuth + API key paths with registerTool() API |
 | Security Processing | ✅ | Step 4.5 in all 6 tool implementations |
 | Custom Domain | ✅ | nbp-rates.wtyczki.ai |
 | Workers.dev Disabled | ✅ | Security best practice |
-| Consistency Tests | ⚠️ | Not yet run (pre-deployment) |
+| SDK 1.20+ Migration | ✅ | registerTool() API, structuredContent |
+| DNS Rebinding Protection | ✅ | Origin whitelist validation (API key path) |
+| TypeScript Compilation | ✅ | Zero errors |
+| Consistency Tests | ✅ | All passed |
 | 7-Step Token Pattern | ✅ | All tools follow pattern correctly |
 
 ---
@@ -740,6 +776,37 @@ const balanceCheck = await checkBalance(this.env.TOKEN_DB, userId, TOOL_COST);
 **Rationale**: User simplicity > granular cost optimization
 **Trade-off**: Users get "better deal" on history queries, simpler mental model
 **Business Impact**: Acceptable - free external API means no cost variance to pass through
+
+---
+
+## 16. Implementation Status & SDK 1.20+ Migration
+
+### Completed Features
+
+- **OAuth Authentication**: WorkOS Magic Auth with token database integration
+- **API Key Authentication**: Full LRU-cached implementation with all 3 tools
+- **Tool 1 (getCurrencyRate)**: Current and historical exchange rates
+- **Tool 2 (getGoldPrice)**: Gold price lookup by date
+- **Tool 3 (getCurrencyHistory)**: Historical exchange rate ranges (up to 93 days)
+- **Security Processing**: Step 4.5 in all 6 tool paths (3 OAuth + 3 API key)
+- **SDK 1.20+ Migration** (Nov 27, 2025):
+  - SDK upgraded to ^1.20.1
+  - All 3 tools migrated from `server.tool()` to `registerTool()` API
+  - Added `structuredContent` field to all 6 tool paths
+  - Added DNS rebinding protection (API key path)
+  - All tools now use `z.enum()` for currency code validation instead of plain enums
+  - TypeScript compilation: ✅ Zero errors
+  - Consistency checks: ✅ All passed
+  - Dual-auth parity: ✅ Verified
+
+### Deployment Status
+
+- ✅ **Pre-Deployment Validation**:
+  - TypeScript compilation: Zero errors
+  - Consistency checks: All passed
+  - SDK compliance: Verified
+- ✅ **GitHub Integration**: Automatic deployment on git push
+- 🚀 **Custom Domain**: https://nbp-rates.wtyczki.ai
 
 ---
 
