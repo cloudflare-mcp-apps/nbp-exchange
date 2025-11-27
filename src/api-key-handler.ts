@@ -266,28 +266,40 @@ async function getOrCreateServer(
 
   // Register all NBP tools (same as NbpMCP.init())
   // Tool 1: getCurrencyRate
-  server.tool(
+  server.registerTool(
     "getCurrencyRate",
-    "Get current or historical buy/sell exchange rates for a specific currency from the Polish National Bank (NBP). " +
-      "Returns bid (bank buy) and ask (bank sell) prices in Polish Zloty (PLN) from NBP Table C. " +
-      "Use this when you need to know how much a currency costs to exchange at Polish banks. " +
-      "Note: NBP only publishes rates on trading days (Mon-Fri, excluding Polish holidays). " +
     {
-      currencyCode: z
-        .enum(["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"])
-        .describe(
-          "Three-letter ISO 4217 currency code (uppercase). " +
-            "Supported currencies: USD, EUR, GBP, CHF, AUD, CAD, SEK, NOK, DKK, JPY, CZK, HUF"
-        ),
-      date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .optional()
-        .describe(
-          "Optional: Specific date in YYYY-MM-DD format (e.g., '2025-10-01'). " +
-            "If omitted, returns the most recent available rate. " +
-            "Must be a trading day (not weekend/holiday) or you'll get a 404 error."
-        ),
+      title: "Get Currency Exchange Rate",
+      description: "Get current or historical buy/sell exchange rates for a specific currency from the Polish National Bank (NBP). " +
+        "Returns bid (bank buy) and ask (bank sell) prices in Polish Zloty (PLN) from NBP Table C. " +
+        "Use this when you need to know how much a currency costs to exchange at Polish banks. " +
+        "Note: NBP only publishes rates on trading days (Mon-Fri, excluding Polish holidays). ",
+      inputSchema: {
+        currencyCode: z
+          .enum(["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"])
+          .describe(
+            "Three-letter ISO 4217 currency code (uppercase). " +
+              "Supported currencies: USD, EUR, GBP, CHF, AUD, CAD, SEK, NOK, DKK, JPY, CZK, HUF"
+          ),
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe(
+            "Optional: Specific date in YYYY-MM-DD format (e.g., '2025-10-01'). " +
+              "If omitted, returns the most recent available rate. " +
+              "Must be a trading day (not weekend/holiday) or you'll get a 404 error."
+          ),
+      },
+      outputSchema: {
+        table: z.string(),
+        currency: z.string(),
+        code: z.string(),
+        bid: z.number(),
+        ask: z.number(),
+        tradingDate: z.string(),
+        effectiveDate: z.string(),
+      }
     },
     async ({ currencyCode, date }) => {
       const TOOL_COST = 1;
@@ -378,20 +390,29 @@ async function getOrCreateServer(
   );
 
   // Tool 2: getGoldPrice (similar structure)
-  server.tool(
+  server.registerTool(
     "getGoldPrice",
-    "Get the official gold price from the Polish National Bank (NBP). " +
-      "Returns the price for 1 gram of gold with 1000 millesimal fineness (pure gold) in Polish Zloty (PLN). " +
-      "NBP publishes gold prices every trading day.",
     {
-      date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .optional()
-        .describe(
-          "Optional: Specific date in YYYY-MM-DD format. " +
-            "If omitted, returns the most recent available price."
-        ),
+      title: "Get Gold Price",
+      description: "Get the official price of 1 gram of gold (1000 millesimal fineness) in Polish Zloty (PLN) " +
+        "as calculated and published by the Polish National Bank (NBP). " +
+        "Use this for investment analysis, comparing gold prices over time, or checking current gold valuation. " +
+        "Note: Prices are only published on trading days (Mon-Fri, excluding holidays). " +
+        "Historical data available from January 2, 2013 onwards. ",
+      inputSchema: {
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe(
+            "Optional: Specific date in YYYY-MM-DD format. " +
+              "If omitted, returns the most recent available price."
+          ),
+      },
+      outputSchema: {
+        date: z.string(),
+        price: z.number(),
+      }
     },
     async ({ date }) => {
       const TOOL_COST = 1;
@@ -479,22 +500,38 @@ async function getOrCreateServer(
   );
 
   // Tool 3: getCurrencyHistory (similar structure)
-  server.tool(
+  server.registerTool(
     "getCurrencyHistory",
-    "Get historical currency exchange rate series over a date range from the Polish National Bank (NBP). " +
-      "Returns bid/ask prices for each trading day in the range. Maximum 93 days of data. " +
     {
-      currencyCode: z
-        .enum(["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"])
-        .describe("Three-letter ISO 4217 currency code"),
-      startDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .describe("Start date in YYYY-MM-DD format"),
-      endDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .describe("End date in YYYY-MM-DD format (max 93 days from start)"),
+      title: "Get Currency History",
+      description: "Get a time series of historical exchange rates for a currency over a date range. " +
+        "Returns buy/sell rates (bid/ask) in PLN for each trading day within the specified period. " +
+        "Useful for analyzing currency trends, calculating average rates, or comparing rates across months. " +
+        "IMPORTANT: NBP API limit is maximum 93 days per query. Only trading days are included (weekends/holidays are skipped). ",
+      inputSchema: {
+        currencyCode: z
+          .enum(["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"])
+          .describe("Three-letter ISO 4217 currency code"),
+        startDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .describe("Start date in YYYY-MM-DD format"),
+        endDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .describe("End date in YYYY-MM-DD format (max 93 days from start)"),
+      },
+      outputSchema: {
+        table: z.string(),
+        currency: z.string(),
+        code: z.string(),
+        rates: z.array(z.object({
+          tradingDate: z.string(),
+          effectiveDate: z.string(),
+          bid: z.number(),
+          ask: z.number(),
+        })),
+      }
     },
     async ({ currencyCode, startDate, endDate }) => {
       const TOOL_COST = 1;
@@ -617,6 +654,24 @@ async function handleHTTPTransport(
 ): Promise<Response> {
   console.log(`📡 [API Key Auth] HTTP transport request from ${userEmail}`);
 
+  // DNS Rebinding Protection
+  const origin = request.headers.get('origin');
+  const ALLOWED_ORIGINS = [
+    'https://claude.ai',
+    'https://chatgpt.com',
+    'https://panel.wtyczki.ai',
+    'https://anythingllm.local'
+  ];
+
+  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+    console.warn(`[Security] Blocked request from origin: ${origin}`);
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32603, message: 'Request origin not allowed' }
+    }), { status: 403, headers: { "Content-Type": "application/json" } });
+  }
+
   try {
     // Parse JSON-RPC request
     const jsonRpcRequest = await request.json() as {
@@ -721,9 +776,10 @@ async function handleToolsList(
   const tools = [
     {
       name: "getCurrencyRate",
+      title: "Get Currency Exchange Rate",
       description:
         "Get current or historical buy/sell exchange rates for a specific currency from the Polish National Bank (NBP). " +
-        "Returns bid (buy) and ask (sell) prices for the specified date or most recent trading day. " +
+        "Returns bid (buy) and ask (sell) prices for the specified date or most recent trading day. ",
       inputSchema: {
         type: "object",
         properties: {
@@ -741,12 +797,28 @@ async function handleToolsList(
         },
         required: ["currencyCode"],
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          table: { type: "string" },
+          currency: { type: "string" },
+          code: { type: "string" },
+          bid: { type: "number" },
+          ask: { type: "number" },
+          tradingDate: { type: "string" },
+          effectiveDate: { type: "string" },
+        },
+      },
     },
     {
       name: "getGoldPrice",
+      title: "Get Gold Price",
       description:
-        "Get the official gold price in PLN per gram from the Polish National Bank (NBP). " +
-        "Returns the price for a specific date or the most recent trading day. " +
+        "Get the official price of 1 gram of gold (1000 millesimal fineness) in Polish Zloty (PLN) " +
+        "as calculated and published by the Polish National Bank (NBP). " +
+        "Use this for investment analysis, comparing gold prices over time, or checking current gold valuation. " +
+        "Note: Prices are only published on trading days (Mon-Fri, excluding holidays). " +
+        "Historical data available from January 2, 2013 onwards. ",
       inputSchema: {
         type: "object",
         properties: {
@@ -758,12 +830,22 @@ async function handleToolsList(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          date: { type: "string" },
+          price: { type: "number" },
+        },
+      },
     },
     {
       name: "getCurrencyHistory",
+      title: "Get Currency History",
       description:
-        "Get historical currency exchange rate series over a date range from the Polish National Bank (NBP). " +
-        "Returns bid/ask prices for each trading day in the range. Maximum 93 days of data. " +
+        "Get a time series of historical exchange rates for a currency over a date range. " +
+        "Returns buy/sell rates (bid/ask) in PLN for each trading day within the specified period. " +
+        "Useful for analyzing currency trends, calculating average rates, or comparing rates across months. " +
+        "IMPORTANT: NBP API limit is maximum 93 days per query. Only trading days are included (weekends/holidays are skipped). ",
       inputSchema: {
         type: "object",
         properties: {
@@ -784,6 +866,26 @@ async function handleToolsList(
           },
         },
         required: ["currencyCode", "startDate", "endDate"],
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          table: { type: "string" },
+          currency: { type: "string" },
+          code: { type: "string" },
+          rates: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                tradingDate: { type: "string" },
+                effectiveDate: { type: "string" },
+                bid: { type: "number" },
+                ask: { type: "number" },
+              },
+            },
+          },
+        },
       },
     },
   ];
@@ -936,8 +1038,10 @@ async function executeCurrencyRateTool(
     actionId
   );
 
+  const resultObject = JSON.parse(finalResult);
   return {
     content: [{ type: "text" as const, text: finalResult }],
+    structuredContent: resultObject,
   };
 }
 
@@ -1015,8 +1119,10 @@ async function executeGoldPriceTool(
     actionId
   );
 
+  const resultObject = JSON.parse(finalResult);
   return {
     content: [{ type: "text" as const, text: finalResult }],
+    structuredContent: resultObject,
   };
 }
 
@@ -1094,8 +1200,10 @@ async function executeCurrencyHistoryTool(
     actionId
   );
 
+  const resultObject = JSON.parse(finalResult);
   return {
     content: [{ type: "text" as const, text: finalResult }],
+    structuredContent: resultObject,
   };
 }
 
