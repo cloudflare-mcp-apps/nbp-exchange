@@ -17,6 +17,14 @@
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
 
+  /**
+   * Build command for GitHub → Cloudflare deployment
+   * Ensures dependencies are installed before TypeScript compilation
+   */
+  "build": {
+    "command": "npm install && npx tsc --noEmit"
+  },
+
   "migrations": [
     {
       "new_sqlite_classes": ["NbpMCP"],
