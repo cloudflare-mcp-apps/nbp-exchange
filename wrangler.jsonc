@@ -19,10 +19,19 @@
 
   /**
    * Build command for GitHub → Cloudflare deployment
-   * Ensures dependencies are installed before TypeScript compilation
+   * Ensures dependencies are installed, widgets are built, then TypeScript is checked
    */
   "build": {
-    "command": "npm install && npx tsc --noEmit"
+    "command": "npm install && npm run build:widgets && npx tsc --noEmit"
+  },
+
+  /**
+   * Cloudflare Assets binding for MCP App widgets
+   * Built widget HTML files are served from this directory
+   */
+  "assets": {
+    "directory": "./web/dist/widgets",
+    "binding": "ASSETS"
   },
 
   "migrations": [

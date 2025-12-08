@@ -14,16 +14,25 @@
  * 7. Return response
  */
 
-import { validateApiKey } from "./apiKeys";
-import { getUserById } from "./tokenUtils";
+import { validateApiKey } from "./auth/apiKeys";
+import { getUserById } from "./shared/tokenUtils";
 import type { Env } from "./types";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { fetchCurrencyRate, fetchGoldPrice, fetchCurrencyHistory } from "./nbp-client";
-import { checkBalance, consumeTokensWithRetry } from "./tokenConsumption";
-import { formatInsufficientTokensError, formatAccountDeletedError } from "./tokenUtils";
-import { sanitizeOutput, redactPII } from 'pilpat-mcp-security';
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { executeToolWithTokenConsumption } from "./shared/tool-executor";
+import { executeGetCurrencyHistory } from "./tools/nbp-tools";
+import {
+    GetCurrencyRateInput,
+    GetGoldPriceInput,
+    GetCurrencyHistoryInput
+} from "./schemas/inputs";
+import {
+    GetCurrencyRateOutputSchema,
+    GetGoldPriceOutputSchema,
+    GetCurrencyHistoryOutputSchema
+} from "./schemas/outputs";
+import { fetchCurrencyRate, fetchGoldPrice } from "./api-client";
+import { logger } from "./shared/logger";
 
 /**
  * Simple LRU (Least Recently Used) Cache for MCP Server instances
@@ -127,7 +136,7 @@ class LRUCache<K, V> {
 
     if (oldestKey !== undefined) {
       this.cache.delete(oldestKey);
-      console.log(`🗑️  [LRU Cache] Evicted server for user: ${String(oldestKey)}`);
+      logger.info({ event: "lru_cache_eviction", evicted_user_id: String(oldestKey), cache_size: this.cache.size });
     }
   }
 
@@ -172,14 +181,12 @@ export async function handleApiKeyRequest(
   pathname: string
 ): Promise<Response> {
   try {
-    console.log(`🔐 [API Key Auth] Request to ${pathname}`);
-
     // 1. Extract API key from Authorization header
     const authHeader = request.headers.get("Authorization");
     const apiKey = authHeader?.replace("Bearer ", "");
 
     if (!apiKey) {
-      console.log("❌ [API Key Auth] Missing Authorization header");
+      logger.warn({ event: "auth_attempt", method: "api_key", success: false, reason: "Missing Authorization header" });
       return jsonError("Missing Authorization header", 401);
     }
 
@@ -187,7 +194,7 @@ export async function handleApiKeyRequest(
     const userId = await validateApiKey(apiKey, env);
 
     if (!userId) {
-      console.log("❌ [API Key Auth] Invalid or expired API key");
+      logger.warn({ event: "auth_attempt", method: "api_key", success: false, reason: "Invalid or expired API key" });
       return jsonError("Invalid or expired API key", 401);
     }
 
@@ -196,13 +203,18 @@ export async function handleApiKeyRequest(
 
     if (!dbUser) {
       // getUserById already checks is_deleted, so null means not found OR deleted
-      console.log(`❌ [API Key Auth] User not found or deleted: ${userId}`);
+      logger.warn({ event: "user_lookup", lookup_by: "id", user_id: userId, found: false });
       return jsonError("User not found or account deleted", 404);
     }
 
-    console.log(
-      `✅ [API Key Auth] Authenticated user: ${dbUser.email} (${userId}), balance: ${dbUser.current_token_balance} tokens`
-    );
+    logger.info({
+      event: "user_lookup",
+      lookup_by: "id",
+      user_id: userId,
+      user_email: dbUser.email,
+      found: true,
+      balance: dbUser.current_token_balance
+    });
 
     // 4. Create or get cached MCP server with tools
     const server = await getOrCreateServer(env, userId, dbUser.email);
@@ -216,7 +228,7 @@ export async function handleApiKeyRequest(
       return jsonError("Invalid endpoint. Use /sse or /mcp", 400);
     }
   } catch (error) {
-    console.error("[API Key Auth] Error:", error);
+    logger.error({ event: "server_error", error: String(error), context: "API Key Auth", pathname });
     return jsonError(
       `Internal server error: ${error instanceof Error ? error.message : String(error)}`,
       500
@@ -248,15 +260,11 @@ async function getOrCreateServer(
   // Check cache first
   const cached = serverCache.get(userId);
   if (cached) {
-    console.log(
-      `📦 [LRU Cache] HIT for user ${userId} (cache size: ${serverCache.size}/${MAX_CACHED_SERVERS})`
-    );
+    logger.info({ event: "cache_operation", operation: "hit", key: userId });
     return cached;
   }
 
-  console.log(
-    `🔧 [LRU Cache] MISS for user ${userId} - creating new server (cache size: ${serverCache.size}/${MAX_CACHED_SERVERS})`
-  );
+  logger.info({ event: "cache_operation", operation: "miss", key: userId });
 
   // Create new MCP server
   const server = new McpServer({
@@ -264,8 +272,8 @@ async function getOrCreateServer(
     version: "1.0.0",
   });
 
-  // Register all NBP tools (same as NbpMCP.init())
-  // Tool 1: getCurrencyRate
+  // Register all NBP tools using modular pattern
+  // Tool 1: getCurrencyRate (1 token) - Uses generic executor
   server.registerTool(
     "getCurrencyRate",
     {
@@ -274,122 +282,23 @@ async function getOrCreateServer(
         "Returns bid (bank buy) and ask (bank sell) prices in Polish Zloty (PLN) from NBP Table C. " +
         "Use this when you need to know how much a currency costs to exchange at Polish banks. " +
         "Note: NBP only publishes rates on trading days (Mon-Fri, excluding Polish holidays). ",
-      inputSchema: {
-        currencyCode: z
-          .enum(["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"])
-          .describe(
-            "Three-letter ISO 4217 currency code (uppercase). " +
-              "Supported currencies: USD, EUR, GBP, CHF, AUD, CAD, SEK, NOK, DKK, JPY, CZK, HUF"
-          ),
-        date: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional()
-          .describe(
-            "Optional: Specific date in YYYY-MM-DD format (e.g., '2025-10-01'). " +
-              "If omitted, returns the most recent available rate. " +
-              "Must be a trading day (not weekend/holiday) or you'll get a 404 error."
-          ),
-      },
-      outputSchema: {
-        table: z.string(),
-        currency: z.string(),
-        code: z.string(),
-        bid: z.number(),
-        ask: z.number(),
-        tradingDate: z.string(),
-        effectiveDate: z.string(),
-      }
+      inputSchema: GetCurrencyRateInput,
+      outputSchema: GetCurrencyRateOutputSchema
     },
-    async ({ currencyCode, date }) => {
-      const TOOL_COST = 1;
-      const TOOL_NAME = "getCurrencyRate";
-      const actionId = crypto.randomUUID();
-
-      try {
-        // Check balance
-        const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
-
-        if (balanceCheck.userDeleted) {
-          return {
-            content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
-            isError: true,
-          };
-        }
-
-        if (!balanceCheck.sufficient) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        // Execute tool
-        const result = await fetchCurrencyRate(currencyCode, date);
-
-        // Step 4.5: Security Processing (Phase 2)
-        const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
-          removeHtml: true,
-          removeControlChars: true,
-          normalizeWhitespace: true,
-          maxLength: 5000
-        });
-
-        const { redacted, detectedPII } = redactPII(sanitized, {
-          redactEmails: false,
-          redactPhones: true,
-          redactCreditCards: true,
-          redactSSN: true,
-          redactBankAccounts: true,
-          redactPESEL: true,
-          redactPolishIdCard: true,
-          redactPolishPassport: true,
-          redactPolishPhones: true,
-          placeholder: '[REDACTED]'
-        });
-
-        if (detectedPII.length > 0) {
-          console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
-        }
-
-        const finalResult = redacted;
-
-        // Consume tokens
-        await consumeTokensWithRetry(
-          env.TOKEN_DB,
-          userId,
-          TOOL_COST,
-          "nbp-exchange-mcp",
-          TOOL_NAME,
-          { currencyCode, date },
-          finalResult,
-          true,
-          actionId
-        );
-
-        return {
-          content: [{ type: "text" as const, text: finalResult }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
+    async (params) => {
+      return executeToolWithTokenConsumption({
+        toolName: "getCurrencyRate",
+        toolCost: 1,
+        userId: userId,
+        tokenDb: env.TOKEN_DB,
+        inputs: params,
+        execute: async (inputs) => await fetchCurrencyRate(inputs.currencyCode, inputs.date),
+        sanitizationOptions: { maxLength: 5000, redactEmails: false }
+      }) as any;
     }
   );
 
-  // Tool 2: getGoldPrice (similar structure)
+  // Tool 2: getGoldPrice (1 token) - Uses generic executor
   server.registerTool(
     "getGoldPrice",
     {
@@ -399,107 +308,23 @@ async function getOrCreateServer(
         "Use this for investment analysis, comparing gold prices over time, or checking current gold valuation. " +
         "Note: Prices are only published on trading days (Mon-Fri, excluding holidays). " +
         "Historical data available from January 2, 2013 onwards. ",
-      inputSchema: {
-        date: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional()
-          .describe(
-            "Optional: Specific date in YYYY-MM-DD format. " +
-              "If omitted, returns the most recent available price."
-          ),
-      },
-      outputSchema: {
-        date: z.string(),
-        price: z.number(),
-      }
+      inputSchema: GetGoldPriceInput,
+      outputSchema: GetGoldPriceOutputSchema
     },
-    async ({ date }) => {
-      const TOOL_COST = 1;
-      const TOOL_NAME = "getGoldPrice";
-      const actionId = crypto.randomUUID();
-
-      try {
-        const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
-
-        if (balanceCheck.userDeleted) {
-          return {
-            content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
-            isError: true,
-          };
-        }
-
-        if (!balanceCheck.sufficient) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const result = await fetchGoldPrice(date);
-
-        // Step 4.5: Security Processing (Phase 2)
-        const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
-          removeHtml: true,
-          removeControlChars: true,
-          normalizeWhitespace: true,
-          maxLength: 5000
-        });
-
-        const { redacted, detectedPII } = redactPII(sanitized, {
-          redactEmails: false,
-          redactPhones: true,
-          redactCreditCards: true,
-          redactSSN: true,
-          redactBankAccounts: true,
-          redactPESEL: true,
-          redactPolishIdCard: true,
-          redactPolishPassport: true,
-          redactPolishPhones: true,
-          placeholder: '[REDACTED]'
-        });
-
-        if (detectedPII.length > 0) {
-          console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
-        }
-
-        const finalResult = redacted;
-
-        await consumeTokensWithRetry(
-          env.TOKEN_DB,
-          userId,
-          TOOL_COST,
-          "nbp-exchange-mcp",
-          TOOL_NAME,
-          { date },
-          finalResult,
-          true,
-          actionId
-        );
-
-        return {
-          content: [{ type: "text" as const, text: finalResult }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
+    async (params) => {
+      return executeToolWithTokenConsumption({
+        toolName: "getGoldPrice",
+        toolCost: 1,
+        userId: userId,
+        tokenDb: env.TOKEN_DB,
+        inputs: params,
+        execute: async (inputs) => await fetchGoldPrice(inputs.date),
+        sanitizationOptions: { maxLength: 5000, redactEmails: false }
+      }) as any;
     }
   );
 
-  // Tool 3: getCurrencyHistory (similar structure)
+  // Tool 3: getCurrencyHistory (1 token) - Uses tool extractor (has pre-validation)
   server.registerTool(
     "getCurrencyHistory",
     {
@@ -508,122 +333,18 @@ async function getOrCreateServer(
         "Returns buy/sell rates (bid/ask) in PLN for each trading day within the specified period. " +
         "Useful for analyzing currency trends, calculating average rates, or comparing rates across months. " +
         "IMPORTANT: NBP API limit is maximum 93 days per query. Only trading days are included (weekends/holidays are skipped). ",
-      inputSchema: {
-        currencyCode: z
-          .enum(["USD", "EUR", "GBP", "CHF", "AUD", "CAD", "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"])
-          .describe("Three-letter ISO 4217 currency code"),
-        startDate: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .describe("Start date in YYYY-MM-DD format"),
-        endDate: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .describe("End date in YYYY-MM-DD format (max 93 days from start)"),
-      },
-      outputSchema: {
-        table: z.string(),
-        currency: z.string(),
-        code: z.string(),
-        rates: z.array(z.object({
-          tradingDate: z.string(),
-          effectiveDate: z.string(),
-          bid: z.number(),
-          ask: z.number(),
-        })),
-      }
+      inputSchema: GetCurrencyHistoryInput,
+      outputSchema: GetCurrencyHistoryOutputSchema
     },
-    async ({ currencyCode, startDate, endDate }) => {
-      const TOOL_COST = 1;
-      const TOOL_NAME = "getCurrencyHistory";
-      const actionId = crypto.randomUUID();
-
-      try {
-        const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
-
-        if (balanceCheck.userDeleted) {
-          return {
-            content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
-            isError: true,
-          };
-        }
-
-        if (!balanceCheck.sufficient) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const result = await fetchCurrencyHistory(currencyCode, startDate, endDate);
-
-        // Step 4.5: Security Processing (Phase 2)
-        const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
-          removeHtml: true,
-          removeControlChars: true,
-          normalizeWhitespace: true,
-          maxLength: 5000
-        });
-
-        const { redacted, detectedPII } = redactPII(sanitized, {
-          redactEmails: false,
-          redactPhones: true,
-          redactCreditCards: true,
-          redactSSN: true,
-          redactBankAccounts: true,
-          redactPESEL: true,
-          redactPolishIdCard: true,
-          redactPolishPassport: true,
-          redactPolishPhones: true,
-          placeholder: '[REDACTED]'
-        });
-
-        if (detectedPII.length > 0) {
-          console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
-        }
-
-        const finalResult = redacted;
-
-        await consumeTokensWithRetry(
-          env.TOKEN_DB,
-          userId,
-          TOOL_COST,
-          "nbp-exchange-mcp",
-          TOOL_NAME,
-          { currencyCode, startDate, endDate },
-          finalResult,
-          true,
-          actionId
-        );
-
-        return {
-          content: [{ type: "text" as const, text: finalResult }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
+    async (params) => {
+      return executeGetCurrencyHistory(params, env, userId) as any;
     }
   );
 
   // Cache the server (automatic LRU eviction if cache is full)
   serverCache.set(userId, server);
 
-  console.log(
-    `✅ [LRU Cache] Server created and cached for user ${userId} (cache size: ${serverCache.size}/${MAX_CACHED_SERVERS})`
-  );
+  logger.info({ event: "cache_operation", operation: "set", key: userId });
   return server;
 }
 
@@ -652,25 +373,16 @@ async function handleHTTPTransport(
   userId: string,
   userEmail: string
 ): Promise<Response> {
-  console.log(`📡 [API Key Auth] HTTP transport request from ${userEmail}`);
+  logger.info({ event: "transport_request", transport: "http", method: "POST", user_email: userEmail });
 
-  // DNS Rebinding Protection
-  const origin = request.headers.get('origin');
-  const ALLOWED_ORIGINS = [
-    'https://claude.ai',
-    'https://chatgpt.com',
-    'https://panel.wtyczki.ai',
-    'https://anythingllm.local'
-  ];
-
-  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
-    console.warn(`[Security] Blocked request from origin: ${origin}`);
-    return new Response(JSON.stringify({
-      jsonrpc: "2.0",
-      id: null,
-      error: { code: -32603, message: 'Request origin not allowed' }
-    }), { status: 403, headers: { "Content-Type": "application/json" } });
-  }
+  /**
+   * Security: Token-based authentication provides primary protection
+   * - API key validation (database lookup, format check)
+   * - User account verification (is_deleted flag)
+   * - Token balance validation
+   * - Cloudflare Workers infrastructure (runs on *.workers.dev, not localhost)
+   * No origin whitelist - breaks compatibility with MCP clients (Claude, Cursor, custom clients)
+   */
 
   try {
     // Parse JSON-RPC request
@@ -680,8 +392,6 @@ async function handleHTTPTransport(
       method: string;
       params?: any;
     };
-
-    console.log(`📨 [HTTP] Method: ${jsonRpcRequest.method}, ID: ${jsonRpcRequest.id}`);
 
     // Validate JSON-RPC 2.0 format
     if (jsonRpcRequest.jsonrpc !== "2.0") {
@@ -712,7 +422,7 @@ async function handleHTTPTransport(
         });
     }
   } catch (error) {
-    console.error("❌ [HTTP] Error:", error);
+    logger.error({ event: "server_error", error: String(error), context: "HTTP transport" });
     return jsonRpcResponse("error", null, {
       code: -32700,
       message: `Parse error: ${error instanceof Error ? error.message : String(error)}`,
@@ -729,8 +439,6 @@ function handleInitialize(request: {
   method: string;
   params?: any;
 }): Response {
-  console.log("✅ [HTTP] Initialize request");
-
   return jsonRpcResponse(request.id, {
     protocolVersion: "2024-11-05",
     capabilities: {
@@ -752,8 +460,6 @@ function handlePing(request: {
   method: string;
   params?: any;
 }): Response {
-  console.log("✅ [HTTP] Ping request");
-
   return jsonRpcResponse(request.id, {});
 }
 
@@ -769,7 +475,6 @@ async function handleToolsList(
     params?: any;
   }
 ): Promise<Response> {
-  console.log("✅ [HTTP] Tools list request");
 
   // Manually define tools since McpServer doesn't expose listTools()
   // These match the tools registered in getOrCreateServer()
@@ -923,8 +628,6 @@ async function handleToolsCall(
   const toolName = request.params.name;
   const toolArgs = request.params.arguments || {};
 
-  console.log(`🔧 [HTTP] Tool call: ${toolName} by ${userEmail}`, toolArgs);
-
   try {
     // Execute tool logic based on tool name
     // This duplicates the logic from getOrCreateServer() but is necessary
@@ -952,11 +655,9 @@ async function handleToolsCall(
         });
     }
 
-    console.log(`✅ [HTTP] Tool ${toolName} completed successfully`);
-
     return jsonRpcResponse(request.id, result);
   } catch (error) {
-    console.error(`❌ [HTTP] Tool ${toolName} failed:`, error);
+    logger.error({ event: "tool_failed", tool: toolName, user_email: userEmail, user_id: userId, error: String(error) });
     return jsonRpcResponse(request.id, null, {
       code: -32603,
       message: `Tool execution error: ${error instanceof Error ? error.message : String(error)}`,
@@ -965,246 +666,52 @@ async function handleToolsCall(
 }
 
 /**
- * Execute getCurrencyRate tool
+ * Execute getCurrencyRate tool (uses generic executor)
  */
 async function executeCurrencyRateTool(
   args: Record<string, any>,
   env: Env,
   userId: string
 ): Promise<any> {
-  const TOOL_COST = 1;
-  const TOOL_NAME = "getCurrencyRate";
-  const actionId = crypto.randomUUID();
-
-  const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
-
-  if (balanceCheck.userDeleted) {
-    return {
-      content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
-      isError: true,
-    };
-  }
-
-  if (!balanceCheck.sufficient) {
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  const result = await fetchCurrencyRate(args.currencyCode, args.date);
-
-  // Step 4.5: Security Processing (Phase 2)
-  const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
-    removeHtml: true,
-    removeControlChars: true,
-    normalizeWhitespace: true,
-    maxLength: 5000
+  return executeToolWithTokenConsumption({
+    toolName: "getCurrencyRate",
+    toolCost: 1,
+    userId: userId,
+    tokenDb: env.TOKEN_DB,
+    inputs: args,
+    execute: async (inputs: any) => await fetchCurrencyRate(inputs.currencyCode, inputs.date),
+    sanitizationOptions: { maxLength: 5000, redactEmails: false }
   });
-
-  const { redacted, detectedPII } = redactPII(sanitized, {
-    redactEmails: false,
-    redactPhones: true,
-    redactCreditCards: true,
-    redactSSN: true,
-    redactBankAccounts: true,
-    redactPESEL: true,
-    redactPolishIdCard: true,
-    redactPolishPassport: true,
-    redactPolishPhones: true,
-    placeholder: '[REDACTED]'
-  });
-
-  if (detectedPII.length > 0) {
-    console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
-  }
-
-  const finalResult = redacted;
-
-  await consumeTokensWithRetry(
-    env.TOKEN_DB,
-    userId,
-    TOOL_COST,
-    "nbp-exchange-mcp",
-    TOOL_NAME,
-    args,
-    finalResult,
-    true,
-    actionId
-  );
-
-  const resultObject = JSON.parse(finalResult);
-  return {
-    content: [{ type: "text" as const, text: finalResult }],
-    structuredContent: resultObject,
-  };
 }
 
 /**
- * Execute getGoldPrice tool
+ * Execute getGoldPrice tool (uses generic executor)
  */
 async function executeGoldPriceTool(
   args: Record<string, any>,
   env: Env,
   userId: string
 ): Promise<any> {
-  const TOOL_COST = 1;
-  const TOOL_NAME = "getGoldPrice";
-  const actionId = crypto.randomUUID();
-
-  const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
-
-  if (balanceCheck.userDeleted) {
-    return {
-      content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
-      isError: true,
-    };
-  }
-
-  if (!balanceCheck.sufficient) {
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  const result = await fetchGoldPrice(args.date);
-
-  // Step 4.5: Security Processing (Phase 2)
-  const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
-    removeHtml: true,
-    removeControlChars: true,
-    normalizeWhitespace: true,
-    maxLength: 5000
+  return executeToolWithTokenConsumption({
+    toolName: "getGoldPrice",
+    toolCost: 1,
+    userId: userId,
+    tokenDb: env.TOKEN_DB,
+    inputs: args,
+    execute: async (inputs: any) => await fetchGoldPrice(inputs.date),
+    sanitizationOptions: { maxLength: 5000, redactEmails: false }
   });
-
-  const { redacted, detectedPII } = redactPII(sanitized, {
-    redactEmails: false,
-    redactPhones: true,
-    redactCreditCards: true,
-    redactSSN: true,
-    redactBankAccounts: true,
-    redactPESEL: true,
-    redactPolishIdCard: true,
-    redactPolishPassport: true,
-    redactPolishPhones: true,
-    placeholder: '[REDACTED]'
-  });
-
-  if (detectedPII.length > 0) {
-    console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
-  }
-
-  const finalResult = redacted;
-
-  await consumeTokensWithRetry(
-    env.TOKEN_DB,
-    userId,
-    TOOL_COST,
-    "nbp-exchange-mcp",
-    TOOL_NAME,
-    args,
-    finalResult,
-    true,
-    actionId
-  );
-
-  const resultObject = JSON.parse(finalResult);
-  return {
-    content: [{ type: "text" as const, text: finalResult }],
-    structuredContent: resultObject,
-  };
 }
 
 /**
- * Execute getCurrencyHistory tool
+ * Execute getCurrencyHistory tool (uses tool extractor with pre-validation)
  */
 async function executeCurrencyHistoryTool(
   args: Record<string, any>,
   env: Env,
   userId: string
 ): Promise<any> {
-  const TOOL_COST = 1;
-  const TOOL_NAME = "getCurrencyHistory";
-  const actionId = crypto.randomUUID();
-
-  const balanceCheck = await checkBalance(env.TOKEN_DB, userId, TOOL_COST);
-
-  if (balanceCheck.userDeleted) {
-    return {
-      content: [{ type: "text" as const, text: formatAccountDeletedError(TOOL_NAME) }],
-      isError: true,
-    };
-  }
-
-  if (!balanceCheck.sufficient) {
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: formatInsufficientTokensError(TOOL_NAME, balanceCheck.currentBalance, TOOL_COST),
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  const result = await fetchCurrencyHistory(args.currencyCode, args.startDate, args.endDate);
-
-  // Step 4.5: Security Processing (Phase 2)
-  const sanitized = sanitizeOutput(JSON.stringify(result, null, 2), {
-    removeHtml: true,
-    removeControlChars: true,
-    normalizeWhitespace: true,
-    maxLength: 5000
-  });
-
-  const { redacted, detectedPII } = redactPII(sanitized, {
-    redactEmails: false,
-    redactPhones: true,
-    redactCreditCards: true,
-    redactSSN: true,
-    redactBankAccounts: true,
-    redactPESEL: true,
-    redactPolishIdCard: true,
-    redactPolishPassport: true,
-    redactPolishPhones: true,
-    placeholder: '[REDACTED]'
-  });
-
-  if (detectedPII.length > 0) {
-    console.warn(`[Security] Tool ${TOOL_NAME}: Redacted PII types:`, detectedPII);
-  }
-
-  const finalResult = redacted;
-
-  await consumeTokensWithRetry(
-    env.TOKEN_DB,
-    userId,
-    TOOL_COST,
-    "nbp-exchange-mcp",
-    TOOL_NAME,
-    args,
-    finalResult,
-    true,
-    actionId
-  );
-
-  const resultObject = JSON.parse(finalResult);
-  return {
-    content: [{ type: "text" as const, text: finalResult }],
-    structuredContent: resultObject,
-  };
+  return executeGetCurrencyHistory(args as any, env, userId);
 }
 
 /**
@@ -1245,8 +752,6 @@ function jsonRpcResponse(
  * @returns SSE response stream
  */
 async function handleSSETransport(server: McpServer, request: Request): Promise<Response> {
-  console.log("📡 [API Key Auth] Setting up SSE transport");
-
   try {
     // For Cloudflare Workers, we need to return a Response with a ReadableStream
     // The MCP SDK's SSEServerTransport expects Node.js streams, so we'll implement
@@ -1277,8 +782,6 @@ async function handleSSETransport(server: McpServer, request: Request): Promise<
         await writer.write(encoder.encode("event: message\n"));
         await writer.write(encoder.encode('data: {"status":"connected"}\n\n'));
 
-        console.log("✅ [API Key Auth] SSE connection established");
-
         // Keep connection alive
         const keepAliveInterval = setInterval(async () => {
           try {
@@ -1291,14 +794,14 @@ async function handleSSETransport(server: McpServer, request: Request): Promise<
         // Note: Full MCP protocol implementation would go here
         // For MVP, we're providing basic SSE connectivity
       } catch (error) {
-        console.error("❌ [API Key Auth] SSE error:", error);
+        logger.error({ event: "sse_connection", status: "error", user_email: "unknown", error: String(error) });
         await writer.close();
       }
     })();
 
     return response;
   } catch (error) {
-    console.error("❌ [API Key Auth] SSE transport error:", error);
+    logger.error({ event: "server_error", error: String(error), context: "SSE transport" });
     throw error;
   }
 }

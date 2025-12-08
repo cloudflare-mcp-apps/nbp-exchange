@@ -17,6 +17,8 @@
  * Use checkBalance() and consumeTokensWithRetry() from that module instead.
  */
 
+import { logger } from "./logger";
+
 /**
  * Database user record from mcp-tokens-database
  */
@@ -43,8 +45,6 @@ export async function getUserByEmail(
     email: string
 ): Promise<DatabaseUser | null> {
     try {
-        console.log(`[MCP Token Utils] Querying user by email: ${email}`);
-
         // SECURITY FIX: Check is_deleted to prevent deleted users from authenticating
         const result = await db
             .prepare('SELECT * FROM users WHERE email = ? AND is_deleted = 0')
@@ -52,14 +52,14 @@ export async function getUserByEmail(
             .first<DatabaseUser>();
 
         if (!result) {
-            console.log(`[MCP Token Utils] User not found in database: ${email}`);
+            logger.info({ event: "user_lookup", lookup_by: "email", user_email: email, found: false });
             return null;
         }
 
-        console.log(`[MCP Token Utils] User found: ${result.user_id}, balance: ${result.current_token_balance} tokens`);
+        logger.info({ event: "user_lookup", lookup_by: "email", user_email: email, user_id: result.user_id, found: true, balance: result.current_token_balance });
         return result;
     } catch (error) {
-        console.error('[MCP Token Utils] Error querying user by email:', error);
+        logger.error({ event: "server_error", error: String(error), context: "Query user by email" });
         throw new Error('Failed to query user from database');
     }
 }
@@ -78,8 +78,6 @@ export async function getUserById(
     userId: string
 ): Promise<DatabaseUser | null> {
     try {
-        console.log(`[MCP Token Utils] Querying user by ID: ${userId}`);
-
         // SECURITY FIX: Check is_deleted to prevent deleted users from authenticating
         const result = await db
             .prepare('SELECT * FROM users WHERE user_id = ? AND is_deleted = 0')
@@ -87,14 +85,14 @@ export async function getUserById(
             .first<DatabaseUser>();
 
         if (!result) {
-            console.log(`[MCP Token Utils] User not found or deleted: ${userId}`);
+            logger.info({ event: "user_lookup", lookup_by: "id", user_id: userId, found: false });
             return null;
         }
 
-        console.log(`[MCP Token Utils] User found: ${result.email}, balance: ${result.current_token_balance} tokens`);
+        logger.info({ event: "user_lookup", lookup_by: "id", user_id: userId, user_email: result.email, found: true, balance: result.current_token_balance });
         return result;
     } catch (error) {
-        console.error('[MCP Token Utils] Error querying user by ID:', error);
+        logger.error({ event: "server_error", error: String(error), context: "Query user by ID" });
         throw new Error('Failed to query user from database');
     }
 }

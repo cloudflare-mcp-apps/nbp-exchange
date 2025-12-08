@@ -5,6 +5,9 @@
  * including WorkOS authentication credentials and Cloudflare resources.
  */
 export interface Env {
+    /** Cloudflare Assets binding for MCP App widgets */
+    ASSETS: Fetcher;
+
     /** KV namespace for storing OAuth tokens and session data */
     OAUTH_KV: KVNamespace;
 

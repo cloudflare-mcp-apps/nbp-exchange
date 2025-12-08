@@ -10,7 +10,8 @@
  * Documentation: https://developers.cloudflare.com/ai-gateway/
  */
 
-import type { Env } from "./types";
+import type { Env } from "../types";
+import { logger } from "./logger";
 
 export interface AIGatewayConfig {
   gatewayId: string;
@@ -89,8 +90,6 @@ export async function makeAIGatewayRequest<T = unknown>(
   // Construct gateway URL based on provider
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${gatewayId}/${provider}/${endpoint}`;
 
-  console.log(`[AI Gateway] Making authenticated request to ${provider}/${endpoint}`);
-
   try {
     const response = await fetch(gatewayUrl, {
       method: "POST",
@@ -108,7 +107,6 @@ export async function makeAIGatewayRequest<T = unknown>(
     // Handle successful response
     if (response.ok) {
       const data = await response.json() as T;
-      console.log(`[AI Gateway] ✅ Success (cache: ${cacheStatus})`);
       return { success: true, data, cacheStatus };
     }
 
@@ -116,19 +114,6 @@ export async function makeAIGatewayRequest<T = unknown>(
     const errorData = await response.json() as { error?: string; message?: string };
     const errorMessage = errorData.error || errorData.message || response.statusText;
     const errorCode = response.status;
-
-    // Log specific error conditions
-    if (errorCode === 429) {
-      console.log("[AI Gateway] ⚠️ Rate limit exceeded (429)");
-    } else if (errorCode === 2016) {
-      console.log("[AI Gateway] 🚫 Prompt blocked by Guardrails (2016)");
-    } else if (errorCode === 2017) {
-      console.log("[AI Gateway] 🚫 Response blocked by Guardrails (2017)");
-    } else if (errorCode === 401) {
-      console.log("[AI Gateway] ❌ Unauthorized: Invalid authentication token");
-    } else {
-      console.log(`[AI Gateway] ❌ Error ${errorCode}: ${errorMessage}`);
-    }
 
     return {
       success: false,
@@ -140,7 +125,7 @@ export async function makeAIGatewayRequest<T = unknown>(
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error(`[AI Gateway] Network error: ${errorMsg}`);
+    logger.error({ event: "server_error", error: errorMsg, context: "AI Gateway network error" });
 
     return {
       success: false,

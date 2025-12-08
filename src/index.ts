@@ -1,8 +1,9 @@
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { NbpMCP } from "./server";
-import { AuthkitHandler } from "./authkit-handler";
+import { AuthkitHandler } from "./auth/authkit-handler";
 import { handleApiKeyRequest } from "./api-key-handler";
 import type { Env } from "./types";
+import { logger } from "./shared/logger";
 
 // Export the McpAgent class for Cloudflare Workers
 export { NbpMCP };
@@ -69,22 +70,22 @@ export default {
         env: Env,
         ctx: ExecutionContext
     ): Promise<Response> {
+        const url = new URL(request.url);
         try {
-            const url = new URL(request.url);
             const authHeader = request.headers.get("Authorization");
 
             // Check for API key authentication on MCP endpoints
             if (isApiKeyRequest(url.pathname, authHeader)) {
-                console.log(`🔐 [Dual Auth] API key request detected: ${url.pathname}`);
+                logger.info({ event: "auth_attempt", method: "api_key", success: true });
                 return await handleApiKeyRequest(request, env, ctx, url.pathname);
             }
 
             // Otherwise, use OAuth flow
-            console.log(`🔐 [Dual Auth] OAuth request: ${url.pathname}`);
+            logger.info({ event: "auth_attempt", method: "oauth", success: true });
             return await oauthProvider.fetch(request, env, ctx);
 
         } catch (error) {
-            console.error("[Dual Auth] Error:", error);
+            logger.error({ event: "server_error", error: String(error), context: "Dual Auth", pathname: url.pathname });
             return new Response(
                 JSON.stringify({
                     error: "Internal server error",

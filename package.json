@@ -7,21 +7,39 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "type-check": "tsc --noEmit",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "build:widget:rate": "INPUT=widgets/currency-rate.html vite build",
+    "build:widgets": "npm run build:widget:rate"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.1.0",
+    "@modelcontextprotocol/ext-apps": "git+https://github.com/modelcontextprotocol/ext-apps.git",
     "@modelcontextprotocol/sdk": "^1.20.1",
+    "@radix-ui/react-slot": "^1.1.2",
     "@workos-inc/node": "^7.70.0",
     "agents": "^0.2.14",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "hono": "^4.10.4",
     "jose": "^6.1.0",
     "pilpat-mcp-security": "^1.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^3.4.0",
     "zod": "^4.1.13"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.9.2",
+    "vite": "^6.0.6",
+    "vite-plugin-singlefile": "^2.0.3",
     "wrangler": "^4.40.1"
   }
 }
