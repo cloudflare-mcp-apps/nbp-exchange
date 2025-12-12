@@ -7,6 +7,53 @@ import type { Props } from "./props";
 import { getUserByEmail, formatPurchaseRequiredPage, formatAccountDeletedPage, formatOAuthSuccessPage } from "../shared/tokenUtils";
 import { logger } from "../shared/logger";
 
+// ============================================================
+// OAuth 2.1: PKCE (Proof Key for Code Exchange) Implementation
+// RFC 7636 compliance - prevents authorization code interception
+// ============================================================
+
+function generateCodeVerifier(): string {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return base64UrlEncode(array);
+}
+
+async function generateCodeChallenge(verifier: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return base64UrlEncode(new Uint8Array(hashBuffer));
+}
+
+function base64UrlEncode(buffer: Uint8Array): string {
+    let binaryString = '';
+    for (let i = 0; i < buffer.length; i++) {
+        binaryString += String.fromCharCode(buffer[i]);
+    }
+    const base64 = btoa(binaryString);
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function storeCodeVerifier(env: Env, state: string, verifier: string): Promise<void> {
+    if (!env.USER_SESSIONS) {
+        logger.warn({ event: "session_check", session_id: "pkce", valid: false, reason: "USER_SESSIONS KV not configured" });
+        return;
+    }
+    await env.USER_SESSIONS.put(`pkce:${state}`, verifier, { expirationTtl: 600 });
+}
+
+async function getCodeVerifier(env: Env, state: string): Promise<string | null> {
+    if (!env.USER_SESSIONS) {
+        logger.warn({ event: "session_check", session_id: "pkce", valid: false, reason: "USER_SESSIONS KV not configured" });
+        return null;
+    }
+    const verifier = await env.USER_SESSIONS.get(`pkce:${state}`);
+    if (verifier) {
+        await env.USER_SESSIONS.delete(`pkce:${state}`);
+    }
+    return verifier;
+}
+
 /**
  * Authentication handler for WorkOS AuthKit integration
  *
@@ -187,13 +234,25 @@ app.get("/authorize", async (c) => {
     // ============================================================
     // STEP 6: Fallback to WorkOS (if USER_SESSIONS not configured)
     // ============================================================
-    logger.info({ event: "auth_attempt", method: "oauth", success: true, reason: "Fallback to WorkOS" });
+    logger.info({ event: "auth_attempt", method: "oauth", success: false, reason: "No session handling - falling back to WorkOS" });
+
+    // OAuth 2.1: Generate PKCE parameters
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+    const state = btoa(JSON.stringify(oauthReqInfo));
+
+    // Store code_verifier for later token exchange (10-minute TTL)
+    await storeCodeVerifier(c.env, state, codeVerifier);
+    logger.info({ event: "session_check", session_id: "pkce", valid: true, reason: "Code verifier generated and stored" });
+
     return Response.redirect(
         c.get("workOS").userManagement.getAuthorizationUrl({
             provider: "authkit",
             clientId: c.env.WORKOS_CLIENT_ID,
             redirectUri: new URL("/callback", c.req.url).href,
-            state: btoa(JSON.stringify(oauthReqInfo)),
+            state,
+            codeChallenge,
+            codeChallengeMethod: 'S256',
         }),
     );
 });
@@ -221,16 +280,28 @@ app.get("/callback", async (c) => {
         return c.text("Missing code", 400);
     }
 
-    // Exchange authorization code for tokens and user info
+    // OAuth 2.1: Retrieve code_verifier from KV
+    const state = c.req.query("state") as string;
+    const codeVerifier = await getCodeVerifier(c.env, state);
+
+    if (!codeVerifier) {
+        logger.error({ event: "auth_attempt", method: "oauth", success: false, reason: "PKCE code verifier not found or expired" });
+        return c.text("Invalid or expired PKCE verification", 400);
+    }
+    logger.info({ event: "session_check", session_id: "pkce", valid: true, reason: "Code verifier retrieved" });
+
+    // Exchange authorization code for tokens and user info (with PKCE)
     let response: AuthenticationResponse;
     try {
         response = await workOS.userManagement.authenticateWithCode({
             clientId: c.env.WORKOS_CLIENT_ID,
             code,
+            codeVerifier,
         });
+        logger.info({ event: "session_check", session_id: "pkce", valid: true, reason: "Code verifier validated by WorkOS" });
     } catch (error) {
         logger.error({ event: "auth_attempt", method: "oauth", success: false, reason: String(error) });
-        return c.text("Invalid authorization code", 400);
+        return c.text("Invalid authorization code or PKCE verification failed", 400);
     }
 
     // Extract authentication data
