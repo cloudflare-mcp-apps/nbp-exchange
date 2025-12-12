@@ -5,7 +5,7 @@
  * These schemas provide type safety and structured content validation.
  */
 
-import { z } from "zod";
+import * as z from "zod/v4";
 
 /**
  * Output schema for getCurrencyRate tool
@@ -13,17 +13,15 @@ import { z } from "zod";
  * Returns buy/sell exchange rates for a specific currency
  */
 export const GetCurrencyRateOutputSchema = z.object({
-    table: z.string().describe("NBP table identifier (e.g., 'C' for buy/sell rates)"),
-    currency: z.string().describe("Full currency name (e.g., 'dolar amerykański')"),
-    code: z.string().describe("Three-letter currency code (e.g., 'USD')"),
-    bid: z.number().describe(
-        "Bank's buying price in PLN (what you RECEIVE when selling foreign currency to the bank)"
-    ),
-    ask: z.number().describe(
-        "Bank's selling price in PLN (what you PAY when buying foreign currency from the bank)"
-    ),
-    tradingDate: z.string().describe("Trading date in YYYY-MM-DD format"),
-    effectiveDate: z.string().describe("Effective date in YYYY-MM-DD format"),
+    table: z.string().meta({ description: "NBP table identifier (e.g., 'C' for buy/sell rates)" }),
+    currency: z.string().meta({ description: "Full currency name (e.g., 'dolar amerykański')" }),
+    code: z.string().meta({ description: "Three-letter currency code (e.g., 'USD')" }),
+    bid: z.number().meta({ description:        "Bank's buying price in PLN (what you RECEIVE when selling foreign currency to the bank)"
+    }),
+    ask: z.number().meta({ description:        "Bank's selling price in PLN (what you PAY when buying foreign currency from the bank)"
+    }),
+    tradingDate: z.string().meta({ description: "Trading date in YYYY-MM-DD format" }),
+    effectiveDate: z.string().meta({ description: "Effective date in YYYY-MM-DD format" }),
 });
 
 /**
@@ -32,8 +30,8 @@ export const GetCurrencyRateOutputSchema = z.object({
  * Returns official gold price per gram in PLN
  */
 export const GetGoldPriceOutputSchema = z.object({
-    date: z.string().describe("Price publication date in YYYY-MM-DD format"),
-    price: z.number().describe("Gold price in PLN per gram (1000 millesimal fineness)"),
+    date: z.string().meta({ description: "Price publication date in YYYY-MM-DD format" }),
+    price: z.number().meta({ description: "Gold price in PLN per gram (1000 millesimal fineness)" }),
 });
 
 /**
@@ -42,15 +40,15 @@ export const GetGoldPriceOutputSchema = z.object({
  * Returns historical exchange rate series
  */
 export const GetCurrencyHistoryOutputSchema = z.object({
-    table: z.string().describe("NBP table identifier (e.g., 'C' for buy/sell rates)"),
-    currency: z.string().describe("Full currency name (e.g., 'dolar amerykański')"),
-    code: z.string().describe("Three-letter currency code (e.g., 'USD')"),
+    table: z.string().meta({ description: "NBP table identifier (e.g., 'C' for buy/sell rates)" }),
+    currency: z.string().meta({ description: "Full currency name (e.g., 'dolar amerykański')" }),
+    code: z.string().meta({ description: "Three-letter currency code (e.g., 'USD')" }),
     rates: z.array(z.object({
-        tradingDate: z.string().describe("Trading date in YYYY-MM-DD format"),
-        effectiveDate: z.string().describe("Effective date in YYYY-MM-DD format"),
-        bid: z.number().describe("Bank's buying price in PLN"),
-        ask: z.number().describe("Bank's selling price in PLN"),
-    })).describe("Array of daily exchange rates within the requested date range"),
+        tradingDate: z.string().meta({ description: "Trading date in YYYY-MM-DD format" }),
+        effectiveDate: z.string().meta({ description: "Effective date in YYYY-MM-DD format" }),
+        bid: z.number().meta({ description: "Bank's buying price in PLN" }),
+        ask: z.number().meta({ description: "Bank's selling price in PLN" }),
+    })).meta({ description: "Array of daily exchange rates within the requested date range" }),
 });
 
 // Type inference from schemas

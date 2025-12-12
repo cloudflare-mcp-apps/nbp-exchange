@@ -7,7 +7,7 @@
  * Modularized following skeleton-ideal pattern for easier maintenance and updates.
  */
 
-import { z } from "zod";
+import * as z from "zod/v4";
 
 /**
  * Prompt 1: Core Function - Direct rate retrieval (simple, foundational)
@@ -24,11 +24,11 @@ export const getExchangeRatePrompt = {
             currency: z.enum([
                 "USD", "EUR", "GBP", "CHF", "AUD", "CAD",
                 "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"
-            ]).describe("Three-letter currency code (e.g., USD, EUR, GBP)"),
+            ]).meta({ description: "Three-letter currency code (e.g., USD, EUR, GBP)" }),
             date: z.string()
                 .regex(/^\d{4}-\d{2}-\d{2}$/)
                 .optional()
-                .describe("Optional date in YYYY-MM-DD format. Omit for most recent rate")
+                .meta({ description: "Optional date in YYYY-MM-DD format. Omit for most recent rate" })
         }
     },
     handler: async ({ currency, date }: { currency: string; date?: string }) => {
@@ -83,15 +83,15 @@ export const calculateExchangeCostPrompt = {
             currency: z.enum([
                 "USD", "EUR", "GBP", "CHF", "AUD", "CAD",
                 "SEK", "NOK", "DKK", "JPY", "CZK", "HUF"
-            ]).describe("Three-letter currency code"),
+            ]).meta({ description: "Three-letter currency code" }),
             amount: z.string()
-                .describe("Amount to exchange (e.g., '100', '500.50')"),
+                .meta({ description: "Amount to exchange (e.g., '100', '500.50')" }),
             direction: z.enum(["buying", "selling"])
-                .describe("'buying' = you buy foreign currency (use ASK rate), 'selling' = you sell foreign currency (use BID rate)"),
+                .meta({ description: "'buying' = you buy foreign currency (use ASK rate), 'selling' = you sell foreign currency (use BID rate)" }),
             date: z.string()
                 .regex(/^\d{4}-\d{2}-\d{2}$/)
                 .optional()
-                .describe("Optional date in YYYY-MM-DD format. Omit for current rate")
+                .meta({ description: "Optional date in YYYY-MM-DD format. Omit for current rate" })
         }
     },
     handler: async ({ currency, amount, direction, date }: { currency: string; amount: string; direction: string; date?: string }) => {
