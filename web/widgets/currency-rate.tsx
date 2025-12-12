@@ -207,7 +207,7 @@ function CurrencyRateWidget() {
     // Loading state
     if (loading) {
         return (
-            <Card className="h-screen flex items-center justify-center">
+            <Card className="h-[400px] flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </Card>
         );
@@ -216,7 +216,7 @@ function CurrencyRateWidget() {
     // Error state
     if (error) {
         return (
-            <Card className="h-screen flex flex-col items-center justify-center p-6">
+            <Card className="h-[400px] flex flex-col items-center justify-center p-6">
                 <p className="text-destructive mb-4">{error}</p>
                 <Button onClick={handleRefresh} variant="outline">
                     Spróbuj ponownie
@@ -228,7 +228,7 @@ function CurrencyRateWidget() {
     // Waiting for data state
     if (!data) {
         return (
-            <Card className="h-screen flex items-center justify-center">
+            <Card className="h-[400px] flex items-center justify-center">
                 <p className="text-muted-foreground">
                     Oczekiwanie na dane kursu...
                 </p>
@@ -237,7 +237,7 @@ function CurrencyRateWidget() {
     }
 
     return (
-        <Card className="h-screen flex flex-col">
+        <Card className="h-[400px] flex flex-col">
             <CardHeader className="flex-none">
                 <div className="flex justify-between items-center">
                     <div>

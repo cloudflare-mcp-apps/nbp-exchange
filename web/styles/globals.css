@@ -49,11 +49,11 @@
     }
 }
 
-/* MCP App specific - prevent scrollbars */
+/* MCP App specific - fixed height prevents resize loops (SEP-1865) */
 html,
 body,
 #root {
-    height: 100%;
+    height: 400px;
     width: 100%;
     overflow: hidden;
 }
