@@ -32,10 +32,19 @@ export default defineConfig({
         },
     },
 
+    server: {
+        port: 5173,
+        strictPort: false,
+        hmr: {
+            overlay: true  // Show build errors in browser overlay
+        }
+    },
+
     build: {
         sourcemap: isDevelopment ? "inline" : undefined,
         cssMinify: !isDevelopment,
         minify: !isDevelopment,
+        reportCompressedSize: !isDevelopment,  // Skip in dev for faster builds
         rollupOptions: {
             // INPUT is relative to root (web/), e.g., "widgets/currency-rate.html"
             input: path.resolve(__dirname, "web", INPUT),

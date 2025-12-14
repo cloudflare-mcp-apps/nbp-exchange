@@ -43,14 +43,12 @@ export const UI_RESOURCES = {
         /** SEP-1865 UI metadata */
         _meta: {
             ui: {
-                /**
-                 * Content Security Policy configuration
-                 *
-                 * - connectDomains: Empty - all data comes via MCP postMessage
-                 * - resourceDomains: Empty - all assets bundled inline via viteSingleFile
-                 */
                 csp: {
+                    // connectDomains: Empty because all data comes via MCP protocol (no external API calls from widget)
+                    // Currency exchange rate data is received via ui/notifications/tool-result postMessage
                     connectDomains: [] as string[],
+                    // resourceDomains: Empty because all resources (React, shadcn/ui, Tailwind) are inlined by viteSingleFile
+                    // The widget is a self-contained single HTML file with no external dependencies
                     resourceDomains: [] as string[],
                 },
                 /** Request visible border from host client */

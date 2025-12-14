@@ -5,11 +5,14 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev:full": "concurrently \"npm run dev\" \"npm run watch:widgets\"",
+    "deploy": "npm run build:widgets && wrangler deploy",
     "type-check": "tsc --noEmit",
     "cf-typegen": "wrangler types",
     "build:widget:rate": "INPUT=widgets/currency-rate.html vite build",
-    "build:widgets": "npm run build:widget:rate"
+    "build:widgets": "npm run build:widget:rate",
+    "watch:widgets": "npm run dev:widget",
+    "dev:widget": "INPUT=widgets/currency-rate.html vite build --watch"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.1.0",
@@ -34,6 +37,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^9.2.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",

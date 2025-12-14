@@ -1,5 +1,6 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { RESOURCE_URI_META_KEY } from "@modelcontextprotocol/ext-apps";
 import { executeToolWithTokenConsumption } from "./shared/tool-executor";
 import { executeGetCurrencyHistory } from "./tools/nbp-tools";
 import { getExchangeRatePrompt, calculateExchangeCostPrompt } from "./optional/prompts";
@@ -49,16 +50,30 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
 
     async init() {
         // ========================================================================
-        // UI RESOURCE REGISTRATION SECTION (SEP-1865 MCP Apps)
+        // SEP-1865 MCP Apps: Two-Part Registration Pattern
         // ========================================================================
-        // Register UI widgets that can be linked to tools via _meta["ui/resourceUri"]
+        // Pattern source: mcp-apps/patterns/server-registration-patterns.md#pattern-1
+        //
+        // CRITICAL: MCP Apps require registering TWO separate entities:
+        // PART 1: Resource (UI HTML template) - Registered below
+        // PART 2: Tool (with _meta linkage) - Registered at line 101
+        //
+        // We always register resources - hosts that don't support UI will ignore them
+
         const currencyRateResource = UI_RESOURCES.currencyRate;
+
+        // ========================================================================
+        // PART 1: Register Resource (Predeclared UI Template)
+        // ========================================================================
+        // Pattern: server-registration-patterns.md#pattern-3
+        // Parameter order: (uri, uri, options, handler)
+        // For predeclared resources, both name and uri parameters use the same URI
         this.server.registerResource(
-            currencyRateResource.name,
-            currencyRateResource.uri,
+            currencyRateResource.uri,           // "ui://nbp-exchange/currency-rate" (name param)
+            currencyRateResource.uri,           // "ui://nbp-exchange/currency-rate" (uri param)
             {
                 description: currencyRateResource.description,
-                mimeType: currencyRateResource.mimeType,
+                mimeType: UI_MIME_TYPE,         // Use constant from ui-resources.ts
             },
             async () => {
                 const templateHTML = await loadHtml(this.env.ASSETS, "/currency-rate.html");
@@ -96,8 +111,13 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
         // - Simple tools (getCurrencyRate, getGoldPrice): Generic executor
         // - Complex tools (getCurrencyHistory): Tool extractor
 
-        // Tool 1: Get currency rate (1 token) - Uses generic executor
-        // Linked to Currency Rate Widget via _meta["ui/resourceUri"]
+        // ========================================================================
+        // PART 2: Register Tool with UI Linkage (1 token)
+        // ========================================================================
+        // Pattern: server-registration-patterns.md#pattern-1 (Two-Part Registration)
+        //
+        // CRITICAL: _meta[RESOURCE_URI_META_KEY] links this tool to PART 1 resource
+        // This linkage tells the host which UI to render when tool returns results
         this.server.registerTool(
             "getCurrencyRate",
             {
@@ -108,9 +128,11 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     "Note: NBP only publishes rates on trading days (Mon-Fri, excluding Polish holidays). ",
                 inputSchema: GetCurrencyRateInput,
                 outputSchema: GetCurrencyRateOutputSchema,
-                // Link tool to UI resource (SEP-1865)
+                // SEP-1865: Link tool to predeclared UI resource (PART 1)
+                // Host will render this resource when tool returns results
+                // Always include - hosts that don't support UI will ignore it
                 _meta: {
-                    "ui/resourceUri": UI_RESOURCES.currencyRate.uri,
+                    [RESOURCE_URI_META_KEY]: UI_RESOURCES.currencyRate.uri  // Links to PART 1
                 },
             },
             async (params) => {
