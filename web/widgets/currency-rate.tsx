@@ -16,6 +16,7 @@
 import { StrictMode, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { useApp } from "@modelcontextprotocol/ext-apps/react";
+import { McpUiToolCancelledNotificationSchema } from "@modelcontextprotocol/ext-apps";
 import {
     Card,
     CardContent,
@@ -26,6 +27,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import "../styles/globals.css";
+
+// Prefixed logging pattern for better debugging
+const log = {
+    info: console.log.bind(console, "[NBP Widget]"),
+    warn: console.warn.bind(console, "[NBP Widget]"),
+    error: console.error.bind(console, "[NBP Widget]"),
+};
 
 // Lucide icons inline (avoiding extra dependency weight)
 const Loader2 = ({ className }: { className?: string }) => (
@@ -142,8 +150,14 @@ function CurrencyRateWidget() {
         appInfo: { name: "currency-rate-widget", version: "1.0.0" },
         capabilities: {},
         onAppCreated: (appInstance) => {
+            // Handle tool input (parameters received)
+            appInstance.ontoolinput = (params) => {
+                log.info("Tool input received:", params.arguments);
+            };
+
             // Handle tool result from MCP server
             appInstance.ontoolresult = (params) => {
+                log.info("Tool result received");
                 const payload = params.structuredContent as
                     | CurrencyRateData
                     | undefined;
@@ -154,6 +168,13 @@ function CurrencyRateWidget() {
                 }
             };
 
+            // Handle errors
+            appInstance.onerror = (err) => {
+                log.error("Error:", err);
+                setError(err.message || "Wystąpił nieznany błąd");
+                setLoading(false);
+            };
+
             // Handle theme from host client
             appInstance.onhostcontextchanged = (context) => {
                 if (context.theme === "dark") {
@@ -161,7 +182,26 @@ function CurrencyRateWidget() {
                 } else if (context.theme === "light") {
                     document.documentElement.classList.remove("dark");
                 }
+                if (context.viewport) {
+                    log.info("Viewport changed:", context.viewport);
+                }
             };
+
+            // Handle teardown (graceful cleanup)
+            appInstance.onteardown = async () => {
+                log.info("Teardown requested");
+                // No persistent state to save, just acknowledge
+                return {};
+            };
+
+            // Handle tool cancellation
+            appInstance.setNotificationHandler(
+                McpUiToolCancelledNotificationSchema,
+                (notification) => {
+                    log.info("Tool cancelled:", notification.params);
+                    setLoading(false);
+                }
+            );
         },
     });
 
@@ -196,7 +236,7 @@ function CurrencyRateWidget() {
 
     // Open NBP official page
     const handleOpenNbp = useCallback(() => {
-        app?.sendOpenLink({
+        app?.openLink({
             url: "https://www.nbp.pl/home.aspx?f=/kursy/kursyc.html",
         });
     }, [app]);
@@ -207,7 +247,7 @@ function CurrencyRateWidget() {
     // Loading state
     if (loading) {
         return (
-            <Card className="h-[400px] flex items-center justify-center">
+            <Card className="h-[600px] flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </Card>
         );
@@ -216,7 +256,7 @@ function CurrencyRateWidget() {
     // Error state
     if (error) {
         return (
-            <Card className="h-[400px] flex flex-col items-center justify-center p-6">
+            <Card className="h-[600px] flex flex-col items-center justify-center p-6">
                 <p className="text-destructive mb-4">{error}</p>
                 <Button onClick={handleRefresh} variant="outline">
                     Spróbuj ponownie
@@ -228,7 +268,7 @@ function CurrencyRateWidget() {
     // Waiting for data state
     if (!data) {
         return (
-            <Card className="h-[400px] flex items-center justify-center">
+            <Card className="h-[600px] flex items-center justify-center">
                 <p className="text-muted-foreground">
                     Oczekiwanie na dane kursu...
                 </p>
@@ -237,7 +277,7 @@ function CurrencyRateWidget() {
     }
 
     return (
-        <Card className="h-[400px] flex flex-col">
+        <Card className="h-[600px] flex flex-col">
             <CardHeader className="flex-none">
                 <div className="flex justify-between items-center">
                     <div>

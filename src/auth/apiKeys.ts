@@ -116,22 +116,24 @@ export async function generateApiKey(
 }
 
 /**
- * Validate an API key and return user_id if valid
+ * API key validation result
+ */
+export interface ApiKeyValidationResult {
+  userId: string;
+  email: string;
+}
+
+/**
+ * Validate an API key and return user info if valid
  *
- * @param env - Cloudflare Workers environment
  * @param apiKey - Plaintext API key from Authorization header
- * @returns user_id if valid, null if invalid/expired/revoked
- *
- * @example
- * const userId = await validateApiKey(env, 'wtyk_...');
- * if (!userId) {
- *   return new Response('Invalid API key', { status: 401 });
- * }
+ * @param env - Cloudflare Workers environment
+ * @returns User info if valid, null if invalid/expired/revoked
  */
 export async function validateApiKey(
   apiKey: string,
   env: ApiKeyEnv
-): Promise<string | null> {
+): Promise<ApiKeyValidationResult | null> {
   // Validate format
   if (!apiKey.startsWith('wtyk_') || apiKey.length !== 69) {
     logger.warn({ event: "api_key_validated", user_id: "unknown", key_prefix: "invalid", success: false });
@@ -143,14 +145,8 @@ export async function validateApiKey(
 
   // Look up key in database
   const keyRecord = await env.TOKEN_DB.prepare(`
-    SELECT
-      api_key_id,
-      user_id,
-      api_key_hash,
-      expires_at,
-      is_active
-    FROM api_keys
-    WHERE api_key_hash = ?
+    SELECT api_key_id, user_id, expires_at, is_active
+    FROM api_keys WHERE api_key_hash = ?
   `).bind(apiKeyHash).first<ApiKey>();
 
   if (!keyRecord) {
@@ -170,36 +166,27 @@ export async function validateApiKey(
     return null;
   }
 
-  // Verify user still exists and is not deleted
+  // Verify user still exists and get email
   const user = await env.TOKEN_DB.prepare(`
-    SELECT is_deleted FROM users WHERE user_id = ?
-  `).bind(keyRecord.user_id).first<{ is_deleted: number }>();
+    SELECT email, is_deleted FROM users WHERE user_id = ?
+  `).bind(keyRecord.user_id).first<{ email: string; is_deleted: number }>();
 
   if (!user || user.is_deleted === 1) {
     logger.warn({ event: "api_key_validated", user_id: keyRecord.user_id, key_prefix: keyRecord.key_prefix, success: false });
     return null;
   }
 
-  // Update last_used_at timestamp (blocking to ensure audit trail accuracy)
+  // Update last_used_at timestamp
   try {
-    const updateResult = await env.TOKEN_DB.prepare(`
-      UPDATE api_keys
-      SET last_used_at = ?
-      WHERE api_key_id = ?
+    await env.TOKEN_DB.prepare(`
+      UPDATE api_keys SET last_used_at = ? WHERE api_key_id = ?
     `).bind(Date.now(), keyRecord.api_key_id).run();
-
-    if (updateResult.meta.changes === 0) {
-      logger.warn({ event: "api_key_validated", user_id: keyRecord.user_id, key_prefix: keyRecord.key_prefix, success: true });
-      // Still allow the request to proceed since key was valid at time of lookup
-    }
   } catch (err) {
     logger.error({ event: "server_error", error: String(err), context: "API key last_used_at update" });
-    // Continue anyway - authentication was successful, timestamp update is non-critical
-    // This prevents temporary DB issues from blocking valid API requests
   }
 
   logger.info({ event: "api_key_validated", user_id: keyRecord.user_id, key_prefix: keyRecord.key_prefix, success: true });
-  return keyRecord.user_id;
+  return { userId: keyRecord.user_id, email: user.email };
 }
 
 /**

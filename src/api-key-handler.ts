@@ -15,11 +15,9 @@
  */
 
 import { validateApiKey } from "./auth/apiKeys";
-import { getUserById } from "./shared/tokenUtils";
 import type { Env } from "./types";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { executeToolWithTokenConsumption } from "./shared/tool-executor";
 import { executeGetCurrencyHistory } from "./tools/nbp-tools";
 import {
     GetCurrencyRateInput,
@@ -190,40 +188,27 @@ export async function handleApiKeyRequest(
       return jsonError("Missing Authorization header", 401);
     }
 
-    // 2. Validate API key and get user_id
-    const userId = await validateApiKey(apiKey, env);
+    // 2. Validate API key and get user info
+    const validationResult = await validateApiKey(apiKey, env);
 
-    if (!userId) {
+    if (!validationResult) {
       logger.warn({ event: "auth_attempt", method: "api_key", success: false, reason: "Invalid or expired API key" });
       return jsonError("Invalid or expired API key", 401);
     }
 
-    // 3. Get user from database
-    const dbUser = await getUserById(env.TOKEN_DB, userId);
+    // FREE server - no token balance check needed
+    const { userId, email } = validationResult;
 
-    if (!dbUser) {
-      // getUserById already checks is_deleted, so null means not found OR deleted
-      logger.warn({ event: "user_lookup", lookup_by: "id", user_id: userId, found: false });
-      return jsonError("User not found or account deleted", 404);
-    }
+    logger.info({ event: "auth_attempt", method: "api_key", success: true, user_id: userId, user_email: email });
 
-    logger.info({
-      event: "user_lookup",
-      lookup_by: "id",
-      user_id: userId,
-      user_email: dbUser.email,
-      found: true,
-      balance: dbUser.current_token_balance
-    });
+    // 3. Create or get cached MCP server with tools
+    const server = await getOrCreateServer(env, userId, email);
 
-    // 4. Create or get cached MCP server with tools
-    const server = await getOrCreateServer(env, userId, dbUser.email);
-
-    // 5. Handle the MCP request using the appropriate transport
+    // 4. Handle the MCP request using the appropriate transport
     if (pathname === "/sse") {
       return await handleSSETransport(server, request);
     } else if (pathname === "/mcp") {
-      return await handleHTTPTransport(server, request, env, userId, dbUser.email);
+      return await handleHTTPTransport(server, request, env, userId, email);
     } else {
       return jsonError("Invalid endpoint. Use /sse or /mcp", 400);
     }
@@ -272,8 +257,8 @@ async function getOrCreateServer(
     version: "1.0.0",
   });
 
-  // Register all NBP tools using modular pattern
-  // Tool 1: getCurrencyRate (1 token) - Uses generic executor
+  // Register all NBP tools - FREE, no token consumption
+  // Tool 1: getCurrencyRate
   server.registerTool(
     "getCurrencyRate",
     {
@@ -286,19 +271,18 @@ async function getOrCreateServer(
       outputSchema: GetCurrencyRateOutputSchema
     },
     async (params) => {
-      return executeToolWithTokenConsumption({
-        toolName: "getCurrencyRate",
-        toolCost: 1,
-        userId: userId,
-        tokenDb: env.TOKEN_DB,
-        inputs: params,
-        execute: async (inputs) => await fetchCurrencyRate(inputs.currencyCode, inputs.date),
-        sanitizationOptions: { maxLength: 5000, redactEmails: false }
-      }) as any;
+      try {
+        const result = await fetchCurrencyRate(params.currencyCode, params.date);
+        console.log(`[Tool] getCurrencyRate completed for user ${userId}`);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (error) {
+        console.error(`[Tool] getCurrencyRate failed: ${error}`);
+        return { content: [{ type: "text" as const, text: `Error: ${error}` }], isError: true };
+      }
     }
   );
 
-  // Tool 2: getGoldPrice (1 token) - Uses generic executor
+  // Tool 2: getGoldPrice
   server.registerTool(
     "getGoldPrice",
     {
@@ -312,19 +296,18 @@ async function getOrCreateServer(
       outputSchema: GetGoldPriceOutputSchema
     },
     async (params) => {
-      return executeToolWithTokenConsumption({
-        toolName: "getGoldPrice",
-        toolCost: 1,
-        userId: userId,
-        tokenDb: env.TOKEN_DB,
-        inputs: params,
-        execute: async (inputs) => await fetchGoldPrice(inputs.date),
-        sanitizationOptions: { maxLength: 5000, redactEmails: false }
-      }) as any;
+      try {
+        const result = await fetchGoldPrice(params.date);
+        console.log(`[Tool] getGoldPrice completed for user ${userId}`);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (error) {
+        console.error(`[Tool] getGoldPrice failed: ${error}`);
+        return { content: [{ type: "text" as const, text: `Error: ${error}` }], isError: true };
+      }
     }
   );
 
-  // Tool 3: getCurrencyHistory (1 token) - Uses tool extractor (has pre-validation)
+  // Tool 3: getCurrencyHistory
   server.registerTool(
     "getCurrencyHistory",
     {
@@ -666,41 +649,37 @@ async function handleToolsCall(
 }
 
 /**
- * Execute getCurrencyRate tool (uses generic executor)
+ * Execute getCurrencyRate tool - FREE
  */
 async function executeCurrencyRateTool(
   args: Record<string, any>,
-  env: Env,
+  _env: Env,
   userId: string
 ): Promise<any> {
-  return executeToolWithTokenConsumption({
-    toolName: "getCurrencyRate",
-    toolCost: 1,
-    userId: userId,
-    tokenDb: env.TOKEN_DB,
-    inputs: args,
-    execute: async (inputs: any) => await fetchCurrencyRate(inputs.currencyCode, inputs.date),
-    sanitizationOptions: { maxLength: 5000, redactEmails: false }
-  });
+  try {
+    const result = await fetchCurrencyRate(args.currencyCode, args.date);
+    console.log(`[Tool] getCurrencyRate completed for user ${userId}`);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  } catch (error) {
+    return { content: [{ type: "text", text: `Error: ${error}` }], isError: true };
+  }
 }
 
 /**
- * Execute getGoldPrice tool (uses generic executor)
+ * Execute getGoldPrice tool - FREE
  */
 async function executeGoldPriceTool(
   args: Record<string, any>,
-  env: Env,
+  _env: Env,
   userId: string
 ): Promise<any> {
-  return executeToolWithTokenConsumption({
-    toolName: "getGoldPrice",
-    toolCost: 1,
-    userId: userId,
-    tokenDb: env.TOKEN_DB,
-    inputs: args,
-    execute: async (inputs: any) => await fetchGoldPrice(inputs.date),
-    sanitizationOptions: { maxLength: 5000, redactEmails: false }
-  });
+  try {
+    const result = await fetchGoldPrice(args.date);
+    console.log(`[Tool] getGoldPrice completed for user ${userId}`);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  } catch (error) {
+    return { content: [{ type: "text", text: `Error: ${error}` }], isError: true };
+  }
 }
 
 /**

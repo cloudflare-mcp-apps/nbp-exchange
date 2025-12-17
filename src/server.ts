@@ -1,7 +1,6 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { RESOURCE_URI_META_KEY } from "@modelcontextprotocol/ext-apps";
-import { executeToolWithTokenConsumption } from "./shared/tool-executor";
 import { executeGetCurrencyHistory } from "./tools/nbp-tools";
 import { getExchangeRatePrompt, calculateExchangeCostPrompt } from "./optional/prompts";
 import {
@@ -140,19 +139,20 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     throw new Error("User ID not found in authentication context");
                 }
 
-                return executeToolWithTokenConsumption({
-                    toolName: "getCurrencyRate",
-                    toolCost: 1,
-                    userId: this.props.userId,
-                    tokenDb: this.env.TOKEN_DB,
-                    inputs: params,
-                    execute: async (inputs) => await fetchCurrencyRate(inputs.currencyCode, inputs.date),
-                    sanitizationOptions: { maxLength: 5000, redactEmails: false }
-                }) as any;
+                try {
+                    const result = await fetchCurrencyRate(params.currencyCode, params.date);
+                    console.log(`[Tool] getCurrencyRate completed for user ${this.props.userId}`);
+                    return {
+                        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                        structuredContent: result as unknown as Record<string, unknown>
+                    };
+                } catch (error) {
+                    return { content: [{ type: "text" as const, text: `Error: ${error}` }], isError: true };
+                }
             }
         );
 
-        // Tool 2: Get gold price (1 token) - Uses generic executor
+        // Tool 2: Get gold price - FREE
         this.server.registerTool(
             "getGoldPrice",
             {
@@ -170,15 +170,16 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     throw new Error("User ID not found in authentication context");
                 }
 
-                return executeToolWithTokenConsumption({
-                    toolName: "getGoldPrice",
-                    toolCost: 1,
-                    userId: this.props.userId,
-                    tokenDb: this.env.TOKEN_DB,
-                    inputs: params,
-                    execute: async (inputs) => await fetchGoldPrice(inputs.date),
-                    sanitizationOptions: { maxLength: 5000, redactEmails: false }
-                }) as any;
+                try {
+                    const result = await fetchGoldPrice(params.date);
+                    console.log(`[Tool] getGoldPrice completed for user ${this.props.userId}`);
+                    return {
+                        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+                        structuredContent: result as unknown as Record<string, unknown>
+                    };
+                } catch (error) {
+                    return { content: [{ type: "text" as const, text: `Error: ${error}` }], isError: true };
+                }
             }
         );
 

@@ -9,6 +9,7 @@
 /**
  * MIME type for MCP App UI resources
  * Uses profile parameter to indicate MCP App compliance
+ * Note: This value matches the SEP-1865 specification
  */
 export const UI_MIME_TYPE = "text/html;profile=mcp-app" as const;
 
