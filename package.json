@@ -25,7 +25,6 @@
     "clsx": "^2.1.1",
     "hono": "^4.10.4",
     "jose": "^6.1.0",
-    "pilpat-mcp-security": "^1.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^3.4.0",

@@ -17,7 +17,6 @@
 import { validateApiKey } from "./auth/apiKeys";
 import type { Env } from "./types";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { executeGetCurrencyHistory } from "./tools/nbp-tools";
 import {
     GetCurrencyRateInput,
@@ -169,7 +168,7 @@ const serverCache = new LRUCache<string, McpServer>(MAX_CACHED_SERVERS);
  * @param request - Incoming HTTP request
  * @param env - Cloudflare Workers environment
  * @param ctx - Execution context
- * @param pathname - Request pathname (/sse or /mcp)
+ * @param pathname - Request pathname (/mcp)
  * @returns MCP protocol response
  */
 export async function handleApiKeyRequest(
@@ -204,14 +203,8 @@ export async function handleApiKeyRequest(
     // 3. Create or get cached MCP server with tools
     const server = await getOrCreateServer(env, userId, email);
 
-    // 4. Handle the MCP request using the appropriate transport
-    if (pathname === "/sse") {
-      return await handleSSETransport(server, request);
-    } else if (pathname === "/mcp") {
-      return await handleHTTPTransport(server, request, env, userId, email);
-    } else {
-      return jsonError("Invalid endpoint. Use /sse or /mcp", 400);
-    }
+    // 4. Handle the MCP request using HTTP transport
+    return await handleHTTPTransport(server, request, env, userId, email);
   } catch (error) {
     logger.error({ event: "server_error", error: String(error), context: "API Key Auth", pathname });
     return jsonError(
@@ -718,71 +711,6 @@ function jsonRpcResponse(
       "Content-Type": "application/json",
     },
   });
-}
-
-/**
- * Handle SSE (Server-Sent Events) transport for MCP protocol
- *
- * SSE is used by AnythingLLM and other clients for real-time MCP communication.
- * This uses the standard MCP SDK SSEServerTransport for Cloudflare Workers.
- *
- * @param server - Configured MCP server instance
- * @param request - Incoming HTTP request
- * @returns SSE response stream
- */
-async function handleSSETransport(server: McpServer, request: Request): Promise<Response> {
-  try {
-    // For Cloudflare Workers, we need to return a Response with a ReadableStream
-    // The MCP SDK's SSEServerTransport expects Node.js streams, so we'll implement
-    // SSE manually for Cloudflare Workers compatibility
-
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
-
-    // Send SSE headers
-    const response = new Response(readable, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
-        "X-Accel-Buffering": "no",
-      },
-    });
-
-    // Connect server to client (handle in background)
-    // Note: This is a simplified implementation for API key auth
-    // Full SSE support would require handling POST messages from client
-
-    (async () => {
-      try {
-        // Send initial connection event
-        await writer.write(encoder.encode("event: message\n"));
-        await writer.write(encoder.encode('data: {"status":"connected"}\n\n'));
-
-        // Keep connection alive
-        const keepAliveInterval = setInterval(async () => {
-          try {
-            await writer.write(encoder.encode(": keepalive\n\n"));
-          } catch (e) {
-            clearInterval(keepAliveInterval);
-          }
-        }, 30000);
-
-        // Note: Full MCP protocol implementation would go here
-        // For MVP, we're providing basic SSE connectivity
-      } catch (error) {
-        logger.error({ event: "sse_connection", status: "error", user_email: "unknown", error: String(error) });
-        await writer.close();
-      }
-    })();
-
-    return response;
-  } catch (error) {
-    logger.error({ event: "server_error", error: String(error), context: "SSE transport" });
-    throw error;
-  }
 }
 
 /**

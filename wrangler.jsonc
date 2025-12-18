@@ -114,7 +114,4 @@
   "observability": {
     "enabled": true
   },
-  "vars": {
-    "AI_GATEWAY_ID": "mcp-production-gateway"
-  },
 }
