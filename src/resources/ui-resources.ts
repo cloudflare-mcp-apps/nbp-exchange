@@ -57,6 +57,45 @@ export const UI_RESOURCES = {
             },
         },
     },
+
+    /**
+     * Currency History Chart Widget
+     *
+     * Interactive line chart displaying historical bid/ask exchange rates.
+     * Features:
+     * - Dual-line chart (bid in green, ask in red)
+     * - Date range up to 93 days
+     * - Summary statistics (average, min/max, trend)
+     * - Refresh button for re-fetching data
+     * - Link to NBP official page
+     */
+    currencyHistory: {
+        /** Unique URI identifying this UI resource */
+        uri: "ui://nbp-exchange/currency-history",
+
+        /** Resource name for registration */
+        name: "currency_history_widget",
+
+        /** Human-readable description */
+        description: "Interactive historical exchange rate chart showing NBP bid/ask price trends over time",
+
+        /** MIME type indicating this is an MCP App */
+        mimeType: UI_MIME_TYPE,
+
+        /** SEP-1865 UI metadata */
+        _meta: {
+            ui: {
+                csp: {
+                    // connectDomains: Empty because all data comes via MCP protocol
+                    connectDomains: [] as string[],
+                    // resourceDomains: Empty because all resources are inlined by viteSingleFile
+                    resourceDomains: [] as string[],
+                },
+                /** Request visible border from host client */
+                prefersBorder: true,
+            },
+        },
+    },
 } as const;
 
 /**

@@ -10,9 +10,11 @@
     "type-check": "tsc --noEmit",
     "cf-typegen": "wrangler types",
     "build:widget:rate": "INPUT=widgets/currency-rate.html vite build",
-    "build:widgets": "npm run build:widget:rate",
+    "build:widget:history": "INPUT=widgets/currency-history.html vite build",
+    "build:widgets": "npm run build:widget:rate && npm run build:widget:history",
     "watch:widgets": "npm run dev:widget",
-    "dev:widget": "INPUT=widgets/currency-rate.html vite build --watch"
+    "dev:widget": "INPUT=widgets/currency-rate.html vite build --watch",
+    "dev:widget:history": "INPUT=widgets/currency-history.html vite build --watch"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.1.0",
@@ -21,6 +23,7 @@
     "@radix-ui/react-slot": "^1.1.2",
     "@workos-inc/node": "^7.70.0",
     "agents": "^0.2.14",
+    "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "hono": "^4.10.4",

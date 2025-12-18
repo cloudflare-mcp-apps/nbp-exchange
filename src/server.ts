@@ -88,6 +88,31 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
         );
 
         // ========================================================================
+        // PART 1b: Register Currency History Resource
+        // ========================================================================
+        const currencyHistoryResource = UI_RESOURCES.currencyHistory;
+
+        this.server.registerResource(
+            currencyHistoryResource.uri,
+            currencyHistoryResource.uri,
+            {
+                description: currencyHistoryResource.description,
+                mimeType: UI_MIME_TYPE,
+            },
+            async () => {
+                const templateHTML = await loadHtml(this.env.ASSETS, "/currency-history.html");
+                return {
+                    contents: [{
+                        uri: currencyHistoryResource.uri,
+                        mimeType: UI_MIME_TYPE,
+                        text: templateHTML,
+                        _meta: currencyHistoryResource._meta,
+                    }],
+                };
+            }
+        );
+
+        // ========================================================================
         // PROMPT REGISTRATION SECTION
         // ========================================================================
         // Prompts are now modularized in src/optional/prompts/index.ts
@@ -184,6 +209,9 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
         );
 
         // Tool 3: Get currency history (1 token) - Uses tool extractor (has pre-validation)
+        // ========================================================================
+        // PART 2b: Register Tool with UI Linkage for Currency History
+        // ========================================================================
         this.server.registerTool(
             "getCurrencyHistory",
             {
@@ -193,7 +221,12 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
                     "Useful for analyzing currency trends, calculating average rates, or comparing rates across months. " +
                     "IMPORTANT: NBP API limit is maximum 93 days per query. Only trading days are included (weekends/holidays are skipped). ",
                 inputSchema: GetCurrencyHistoryInput,
-                outputSchema: GetCurrencyHistoryOutputSchema
+                outputSchema: GetCurrencyHistoryOutputSchema,
+                // SEP-1865: Link tool to predeclared UI resource (PART 1b)
+                // Host will render the chart widget when tool returns results
+                _meta: {
+                    [RESOURCE_URI_META_KEY]: UI_RESOURCES.currencyHistory.uri
+                },
             },
             async (params) => {
                 if (!this.props?.userId) {
