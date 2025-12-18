@@ -104,10 +104,10 @@
 - **Use cases**: N/A
 
 ### 3.3 Workers AI (Pattern 3)
-- **Status**: ⚠️ Configured but inactive
-- **Binding**: AI
-- **Model ID**: N/A (binding configured for future use)
-- **Use cases**: Reserved for future AI-powered features
+- **Status**: ❌ Not configured
+- **Binding**: N/A
+- **Model ID**: N/A
+- **Use cases**: N/A
 - **KV caching**: ❌
 
 ### 3.4 Workflows & Async Processing (Pattern 4)
@@ -460,19 +460,17 @@ this.server.registerResource(
 - **Public Access**: N/A
 
 ### Workers AI
-- **Binding**: AI
-- **Status**: ⚠️ Configured but inactive
-- **Model(s)**: N/A (reserved for future use)
-- **Use cases**: Future AI-powered features
-- **Integration**: ❌ Not actively used
+- **Binding**: N/A
+- **Status**: ❌ Not configured
+- **Model(s)**: N/A
+- **Use cases**: N/A
+- **Integration**: ❌ Not configured
 
-### AI Gateway (Shared)
-- **Status**: ✅ Configured
-- **Gateway ID**: mcp-production-gateway (shared across all MCP servers)
-- **Environment Variable**: AI_GATEWAY_ID
-- **Cache Policy**: 1-hour TTL for AI responses
-- **Rate Limiting**: 60 requests/hour per user
-- **Purpose**: Authentication, caching, and rate limiting for AI requests
+### AI Gateway
+- **Status**: ❌ Not configured
+- **Gateway ID**: N/A
+- **Environment Variable**: N/A
+- **Purpose**: N/A (NBP Exchange uses only the free NBP public API)
 
 ### Workflows (Cloudflare)
 - **Binding**: N/A
