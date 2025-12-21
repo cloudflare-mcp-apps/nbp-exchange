@@ -24,7 +24,7 @@
 
   /**
    * Build command for GitHub → Cloudflare deployment
-   * Ensures dependencies are installed, widgets are built, then TypeScript is checked
+   * Only builds widgets - TypeScript compiled by wrangler at runtime
    */
   "build": {
     "command": "npm run build:widgets"
