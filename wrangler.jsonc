@@ -24,10 +24,10 @@
 
   /**
    * Build command for GitHub → Cloudflare deployment
-   * Only builds widgets - TypeScript compiled by wrangler at runtime
+   * Bun installs deps, then builds widgets and checks TypeScript
    */
   "build": {
-    "command": "npm run build:widgets"
+    "command": "npm run build:widgets && npx tsc --noEmit"
   },
 
   /**

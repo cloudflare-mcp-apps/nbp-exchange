@@ -22,7 +22,7 @@
     "@modelcontextprotocol/sdk": "^1.25.1",
     "@radix-ui/react-slot": "^1.1.2",
     "@workos-inc/node": "^7.70.0",
-    "agents": "^0.2.14",
+    "agents": "0.2.32",
     "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
