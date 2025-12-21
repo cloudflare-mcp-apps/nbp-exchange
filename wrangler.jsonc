@@ -27,7 +27,7 @@
    * Ensures dependencies are installed, widgets are built, then TypeScript is checked
    */
   "build": {
-    "command": "npm install && npm run build:widgets && npx tsc --noEmit"
+    "command": "npm install --legacy-peer-deps && npm run build:widgets && npx tsc --noEmit"
   },
 
   /**
