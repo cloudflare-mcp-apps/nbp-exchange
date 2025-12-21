@@ -308,7 +308,7 @@ function CurrencyRateWidget() {
                 </div>
             </CardHeader>
 
-            <CardContent className="flex-1 flex flex-col justify-center gap-6">
+            <CardContent className="flex-1 flex flex-col gap-6">
                 {/* Bid/Ask Display */}
                 <div className="grid grid-cols-2 gap-4">
                     {/* Bid - Bank buys (good for customer selling foreign currency) */}
