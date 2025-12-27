@@ -1,7 +1,7 @@
 /**
- * NBP Tool Extractors - FREE MCP Server
+ * NBP Tool Extractors
  *
- * No token consumption - just API calls.
+ * Tool implementations for NBP Exchange Rate API.
  */
 
 import type { Env } from "../types";
@@ -20,7 +20,7 @@ interface ToolResult {
 /**
  * Execute getCurrencyHistory tool
  *
- * FREE tool - no token consumption, just validation and API call.
+ * Validates input and calls NBP API for currency history.
  */
 export async function executeGetCurrencyHistory(
   params: GetCurrencyHistoryParams,

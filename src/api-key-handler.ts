@@ -18,6 +18,7 @@ import { validateApiKey } from "./auth/apiKeys";
 import type { Env } from "./types";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { executeGetCurrencyHistory } from "./tools/nbp-tools";
+import { TOOL_DESCRIPTIONS } from "./tools/tool-descriptions";
 import {
     GetCurrencyRateInput,
     GetGoldPriceInput,
@@ -49,13 +50,12 @@ import { logger } from "./shared/logger";
  * 🔸 **Performance Optimization Only:**
  *   - This is a PERFORMANCE optimization, not critical state storage
  *   - Cache misses simply recreate the MCP server (acceptable overhead)
- *   - Critical state (balances, tokens, transactions) is stored in D1 database
+ *   - Critical state (user data, sessions) is stored in D1 database
  *
  * 🔸 **Why This Is Safe:**
  *   - MCP servers are stateless (tools query database on each call)
  *   - Recreating a server doesn't cause data loss or corruption
- *   - Token consumption is atomic via D1 transactions (not cached)
- *   - User balances are ALWAYS queried from database (never cached)
+ *   - User data is ALWAYS queried from database (never cached)
  *
  * 🔸 **LRU Eviction:**
  *   - When cache reaches MAX_SIZE, the least recently used server is evicted
@@ -195,7 +195,6 @@ export async function handleApiKeyRequest(
       return jsonError("Invalid or expired API key", 401);
     }
 
-    // FREE server - no token balance check needed
     const { userId, email } = validationResult;
 
     logger.info({ event: "auth_attempt", method: "api_key", success: true, user_id: userId, user_email: email });
@@ -250,18 +249,14 @@ async function getOrCreateServer(
     version: "1.0.0",
   });
 
-  // Register all NBP tools - FREE, no token consumption
+  // Register all NBP tools
   // Tool 1: getCurrencyRate
   server.registerTool(
     "getCurrencyRate",
     {
-      title: "Get Currency Exchange Rate",
-      description: "Get current or historical buy/sell exchange rates for a specific currency from the Polish National Bank (NBP). " +
-        "Returns bid (bank buy) and ask (bank sell) prices in Polish Zloty (PLN) from NBP Table C. " +
-        "Use this when you need to know how much a currency costs to exchange at Polish banks. " +
-        "Note: NBP only publishes rates on trading days (Mon-Fri, excluding Polish holidays). ",
+      ...TOOL_DESCRIPTIONS.getCurrencyRate,
       inputSchema: GetCurrencyRateInput,
-      outputSchema: GetCurrencyRateOutputSchema
+      outputSchema: GetCurrencyRateOutputSchema,
     },
     async (params) => {
       try {
@@ -279,14 +274,9 @@ async function getOrCreateServer(
   server.registerTool(
     "getGoldPrice",
     {
-      title: "Get Gold Price",
-      description: "Get the official price of 1 gram of gold (1000 millesimal fineness) in Polish Zloty (PLN) " +
-        "as calculated and published by the Polish National Bank (NBP). " +
-        "Use this for investment analysis, comparing gold prices over time, or checking current gold valuation. " +
-        "Note: Prices are only published on trading days (Mon-Fri, excluding holidays). " +
-        "Historical data available from January 2, 2013 onwards. ",
+      ...TOOL_DESCRIPTIONS.getGoldPrice,
       inputSchema: GetGoldPriceInput,
-      outputSchema: GetGoldPriceOutputSchema
+      outputSchema: GetGoldPriceOutputSchema,
     },
     async (params) => {
       try {
@@ -304,13 +294,9 @@ async function getOrCreateServer(
   server.registerTool(
     "getCurrencyHistory",
     {
-      title: "Get Currency History",
-      description: "Get a time series of historical exchange rates for a currency over a date range. " +
-        "Returns buy/sell rates (bid/ask) in PLN for each trading day within the specified period. " +
-        "Useful for analyzing currency trends, calculating average rates, or comparing rates across months. " +
-        "IMPORTANT: NBP API limit is maximum 93 days per query. Only trading days are included (weekends/holidays are skipped). ",
+      ...TOOL_DESCRIPTIONS.getCurrencyHistory,
       inputSchema: GetCurrencyHistoryInput,
-      outputSchema: GetCurrencyHistoryOutputSchema
+      outputSchema: GetCurrencyHistoryOutputSchema,
     },
     async (params) => {
       return executeGetCurrencyHistory(params, env, userId) as any;
@@ -355,9 +341,7 @@ async function handleHTTPTransport(
    * Security: Token-based authentication provides primary protection
    * - API key validation (database lookup, format check)
    * - User account verification (is_deleted flag)
-   * - Token balance validation
    * - Cloudflare Workers infrastructure (runs on *.workers.dev, not localhost)
-   * No origin whitelist - breaks compatibility with MCP clients (Claude, Cursor, custom clients)
    */
 
   try {
@@ -642,7 +626,7 @@ async function handleToolsCall(
 }
 
 /**
- * Execute getCurrencyRate tool - FREE
+ * Execute getCurrencyRate tool
  */
 async function executeCurrencyRateTool(
   args: Record<string, any>,
@@ -659,7 +643,7 @@ async function executeCurrencyRateTool(
 }
 
 /**
- * Execute getGoldPrice tool - FREE
+ * Execute getGoldPrice tool
  */
 async function executeGoldPriceTool(
   args: Record<string, any>,

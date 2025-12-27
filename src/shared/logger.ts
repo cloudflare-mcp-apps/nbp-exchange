@@ -59,7 +59,6 @@ export type ToolEvent =
       user_id: string;
       action_id: string;
       duration_ms: number;
-      tokens_consumed: number;
     }
   | {
       event: 'tool_failed';
@@ -69,51 +68,6 @@ export type ToolEvent =
       action_id?: string;
       error: string;
       error_code?: string;
-    };
-
-/**
- * Token system events
- */
-export type TokenEvent =
-  | {
-      event: 'balance_check';
-      user_id: string;
-      required_tokens: number;
-      current_balance: number;
-      sufficient: boolean;
-    }
-  | {
-      event: 'token_consumed';
-      user_id: string;
-      tokens: number;
-      balance_after: number;
-      tool: string;
-      action_id: string;
-      success: boolean;
-    }
-  | {
-      event: 'token_consumption_failed';
-      user_id: string;
-      tokens: number;
-      tool: string;
-      action_id: string;
-      error: string;
-      attempt?: number;
-    }
-  | {
-      event: 'idempotency_skip';
-      action_id: string;
-      user_id: string;
-      tool: string;
-      original_timestamp: string;
-    }
-  | {
-      event: 'failed_deduction_logged';
-      user_id: string;
-      tool: string;
-      action_id: string;
-      tokens: number;
-      error: string;
     };
 
 /**
@@ -176,22 +130,6 @@ export type APIEvent =
       operation: 'hit' | 'miss' | 'set' | 'evict';
       key: string;
       ttl_seconds?: number;
-    };
-
-/**
- * Security events
- */
-export type SecurityEvent =
-  | {
-      event: 'pii_redacted';
-      tool: string;
-      pii_types: string[];
-      count: number;
-    }
-  | {
-      event: 'origin_blocked';
-      origin: string;
-      reason: string;
     };
 
 /**
@@ -260,10 +198,8 @@ export type SystemEvent =
  */
 export type LogEvent =
   | ToolEvent
-  | TokenEvent
   | AuthEvent
   | APIEvent
-  | SecurityEvent
   | DataEvent
   | TransportEvent
   | SystemEvent;

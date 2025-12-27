@@ -1,6 +1,6 @@
 # NBP Exchange Rates MCP App - Infrastructure Snapshot
 
-**Generated**: 2025-12-18
+**Generated**: 2025-12-18 (Updated)
 **Repository**: nbp-exchange
 **Status**: Production
 **Architecture**: MCP Apps (SEP-1865) - Resource Server with Shared D1 Database
@@ -23,8 +23,10 @@
 ### MCP Apps (SEP-1865) Configuration
 - **Assets Binding**: ✅ ASSETS from ./web/dist/widgets
 - **Widget Build System**: ✅ Vite + vite-plugin-singlefile
-- **UI Resource URIs**: ui://nbp-exchange/currency-rate
-- **Two-Part Registration**: ✅ Resource + Tool with _meta linkage
+- **UI Resource URIs**:
+  - ui://nbp-exchange/currency-rate (single rate display)
+  - ui://nbp-exchange/currency-history (historical chart with Chart.js)
+- **Two-Part Registration**: ✅ Resource + Tool with _meta linkage (both widgets)
 
 ---
 
@@ -159,8 +161,10 @@
 ### 3.12 Resources (MCP Apps - SEP-1865)
 - **Status**: ✅ Implemented
 - **registerResource() API**: ✅ Used
-- **Resource URIs**: ui://nbp-exchange/currency-rate
-- **Resource Templates**: ✅ Predeclared
+- **Resource URIs**:
+  - ui://nbp-exchange/currency-rate (card widget)
+  - ui://nbp-exchange/currency-history (Chart.js line chart widget)
+- **Resource Templates**: ✅ Predeclared (both widgets)
 - **MIME Type**: text/html;profile=mcp-app (UI_MIME_TYPE constant)
 - **Handler Pattern**: ✅ async handler with loadHtml()
 - **_meta Field**: ✅ Includes title, icon, description, CSP
@@ -316,6 +320,7 @@ this.server.registerResource(
 - **Cache TTL**: No caching
 - **Pricing Model**: FREE (0 tokens)
 - **Special patterns**: Pre-validation (93-day limit, date ordering) before API call
+- **UI Linkage**: ✅ `_meta[RESOURCE_URI_META_KEY]` → ui://nbp-exchange/currency-history
 
 **Output Format**:
 - Returns time series object with array of daily rates OR validation error
@@ -327,6 +332,7 @@ this.server.registerResource(
 - **openWorldHint**: ✅ (external API data)
 
 **MCP Prompt Integration**: ❌ Not referenced in prompts
+**MCP Apps Widget**: ✅ Chart.js line chart with bid/ask trend visualization
 
 ---
 
@@ -338,18 +344,18 @@ this.server.registerResource(
 - **Tool icons**: ✅ Configured in tool metadata
 - **Display name resolution**: ✅ Title prioritization implemented
 - **4-part tool descriptions**: ✅ All tools follow pattern
-- **Shared description constants**: ⚠️ Descriptions inline in server.ts (not centralized)
+- **Shared description constants**: ✅ Centralized in `src/tools/tool-descriptions.ts`
 
 ### Pillar II: Model Control & Quality
-- **Server instructions (System Prompt)**: ❌ Not implemented (no server-instructions.ts file)
-  - **Word count**: 0 words
-  - **Coverage**: N/A
+- **Server instructions (System Prompt)**: ✅ Implemented (`src/server-instructions.ts`)
+  - **Word count**: ~120 words
+  - **Coverage**: Capabilities, usage patterns, performance limits, constraints
 - **Input schema descriptions + examples**: ✅ All parameters documented
 - **outputSchema**: ✅ All tools have Zod schemas
 - **structuredContent**: ✅ All tools return structured data
 - **Format examples**: ✅ Currency codes, date formats (YYYY-MM-DD)
 - **Optional vs Required clarity**: ✅ Explicit in schemas
-- **Cross-tool workflow patterns**: ⚠️ Documented in prompts but not system instructions
+- **Cross-tool workflow patterns**: ✅ Documented in server instructions
 
 ### Pillar III: Interactivity & Agency
 - **Tool completions (autocomplete)**: ❌ Not implemented
@@ -423,7 +429,9 @@ this.server.registerResource(
 - **Directory**: ./web/dist/widgets
 - **Purpose**: Serving built widget HTML files for MCP Apps (SEP-1865)
 - **Build Command**: npm run build:widgets
-- **Widget Files**: currency-rate.html (470KB single-file bundle)
+- **Widget Files**:
+  - currency-rate.html (~470KB single-file bundle)
+  - currency-history.html (~600KB single-file bundle with Chart.js)
 
 ### Durable Objects
 1. **NbpMCP extends McpAgent**: MCP protocol handling, stateless operation
@@ -582,6 +590,7 @@ this.server.registerResource(
 ```json
 {
   "@radix-ui/react-slot": "^1.1.2",
+  "chart.js": "^4.5.1",
   "class-variance-authority": "^0.7.1",
   "clsx": "^2.1.1",
   "tailwind-merge": "^3.4.0"
@@ -623,8 +632,10 @@ this.server.registerResource(
 | Check | Status | Notes |
 |---|---|---|
 | Vendor Hiding | ✅ | NBP mentioned in long descriptions for context only |
-| Dual Auth Parity | ✅ | OAuth and API key paths identical |
+| Dual Auth Parity | ✅ | OAuth and API key paths identical (via shared constants) |
 | 4-Part Descriptions | ✅ | All tools follow pattern |
+| Server Instructions | ✅ | ~120 words covering capabilities, patterns, limits |
+| Tool Description Constants | ✅ | Centralized in `src/tools/tool-descriptions.ts` |
 | Custom Domain | ✅ | nbp-rates.wtyczki.ai |
 | Workers.dev Disabled | ✅ | Production security enforced |
 | Consistency Tests | ✅ | All infrastructure checks passed |
@@ -734,8 +745,12 @@ if (startDate > endDate) {
 
 ## 14. Future Roadmap
 
+**Implemented (Latest)**:
+- ✅ Server instructions for LLM guidance (`src/server-instructions.ts`)
+- ✅ Centralized tool descriptions (`src/tools/tool-descriptions.ts`)
+- ✅ Historical trend analysis widget (Chart.js line charts) - commit 30e9511
+
 **Planned Components**:
-- Historical trend analysis widget (line charts)
 - Currency comparison tool (multiple currencies side-by-side)
 - Email alerts for rate thresholds
 - Export to CSV/Excel functionality
@@ -773,7 +788,7 @@ if (startDate > endDate) {
 ## 16. Documentation Status
 
 - **README.md**: ✅ Complete
-- **API Documentation**: ⚠️ Incomplete (no server-instructions.ts)
+- **API Documentation**: ✅ Complete (server-instructions.ts implemented)
 - **Setup Guide**: ✅ Complete
 - **Troubleshooting Guide**: ⚠️ Incomplete
 - **Deployment Guide**: ✅ Complete
@@ -787,6 +802,7 @@ if (startDate > endDate) {
 src/
 ├── index.ts                    # Entry point (Dual auth router, DO exports)
 ├── server.ts                   # McpAgent class (OAuth path)
+├── server-instructions.ts      # LLM guidance (capabilities, patterns, limits)
 ├── api-key-handler.ts          # API key authentication path with LRU cache
 ├── api-client.ts               # NBP API client
 ├── types.ts                    # TypeScript type definitions
@@ -810,20 +826,24 @@ src/
 │   ├── logger.ts               # Logging helper
 │   └── ai-gateway.ts           # AI Gateway helpers
 └── tools/                      # Tool implementations
-    └── nbp-tools.ts            # executeGetCurrencyHistory
+    ├── nbp-tools.ts            # executeGetCurrencyHistory
+    └── tool-descriptions.ts    # Centralized tool title/description constants
 ```
 
 ### Widget Files (`web/widgets/`)
 ```
 web/widgets/
-├── currency-rate.html          # HTML entry point for Vite
-└── currency-rate.tsx           # Widget implementation (React)
+├── currency-rate.html          # HTML entry point for rate card
+├── currency-rate.tsx           # Rate card widget (React)
+├── currency-history.html       # HTML entry point for history chart
+└── currency-history.tsx        # History chart widget (React + Chart.js)
 ```
 
 ### Build Output (`web/dist/widgets/`)
 ```
 web/dist/widgets/
-└── currency-rate.html          # Single-file HTML output (470KB)
+├── currency-rate.html          # Single-file HTML output (~470KB)
+└── currency-history.html       # Single-file HTML output with Chart.js (~600KB)
 ```
 
 ### Configuration Files
@@ -846,9 +866,11 @@ web/dist/widgets/
     "dev:full": "concurrently \"npm run dev\" \"npm run watch:widgets\"",
     "deploy": "npm run build:widgets && wrangler deploy",
     "build:widget:rate": "INPUT=widgets/currency-rate.html vite build",
-    "build:widgets": "npm run build:widget:rate",
+    "build:widget:history": "INPUT=widgets/currency-history.html vite build",
+    "build:widgets": "npm run build:widget:rate && npm run build:widget:history",
     "watch:widgets": "npm run dev:widget",
-    "dev:widget": "INPUT=widgets/currency-rate.html vite build --watch"
+    "dev:widget": "INPUT=widgets/currency-rate.html vite build --watch",
+    "dev:widget:history": "INPUT=widgets/currency-history.html vite build --watch"
   }
 }
 ```
@@ -866,7 +888,7 @@ web/dist/widgets/
 **Part 1: Register Resource**
 ```typescript
 this.server.registerResource(
-    resourceUri,                    // "ui://nbp-exchange/currency-rate"
+    resourceUri,                    // "ui://nbp-exchange/currency-rate" or "ui://nbp-exchange/currency-history"
     resourceUri,                    // Same for predeclared
     { description, mimeType },
     async () => ({ contents: [{ uri, mimeType, text, _meta }] })
@@ -882,7 +904,7 @@ this.server.registerTool(
         inputSchema,
         outputSchema,
         _meta: {
-            [RESOURCE_URI_META_KEY]: resourceUri  // Links to UI
+            [RESOURCE_URI_META_KEY]: resourceUri  // Links to UI widget
         }
     },
     async (params) => ({
@@ -895,6 +917,10 @@ this.server.registerTool(
     })
 );
 ```
+
+**Registered Resources**:
+- `ui://nbp-exchange/currency-rate` → getCurrencyRate tool (rate card)
+- `ui://nbp-exchange/currency-history` → getCurrencyHistory tool (Chart.js line chart)
 
 ### Widget Build Configuration (vite.config.ts)
 ```typescript
