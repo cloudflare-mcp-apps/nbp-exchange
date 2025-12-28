@@ -175,7 +175,7 @@ app.get("/authorize", async (c) => {
     const session = result.session!;
 
     // Verify user exists in database
-    const dbUser = await getUserByEmail(c.env.TOKEN_DB, session.email);
+    const dbUser = await getUserByEmail(c.env.DB, session.email);
     if (!dbUser) return c.html(formatRegistrationPage(session.email, c.req.url), 403);
     if (dbUser.is_deleted === 1) return c.html(formatDeletedPage(), 403);
 
@@ -254,7 +254,7 @@ app.get("/callback", async (c) => {
   const { accessToken, organizationId, refreshToken, user } = response;
   const { permissions = [] } = jose.decodeJwt<AccessToken>(accessToken);
 
-  const dbUser = await getUserByEmail(c.env.TOKEN_DB, user.email);
+  const dbUser = await getUserByEmail(c.env.DB, user.email);
   if (!dbUser) return c.html(formatRegistrationPage(user.email), 403);
   if (dbUser.is_deleted === 1) return c.html(formatDeletedPage(), 403);
 
