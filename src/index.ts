@@ -33,9 +33,9 @@ export { NbpMCP };
  * - /register - Dynamic Client Registration endpoint
  *
  * Available Tools (after authentication):
- * - getCurrencyRate: Get current/historical buy/sell rates for currencies (1 token)
- * - getGoldPrice: Get NBP official gold price (1 token)
- * - getCurrencyHistory: Get historical rate series over date range (1 token)
+ * - getCurrencyRate: Get current/historical buy/sell rates for currencies
+ * - getGoldPrice: Get NBP official gold price
+ * - getCurrencyHistory: Get historical rate series over date range
  */
 
 // Create OAuthProvider instance (used when OAuth authentication is needed)

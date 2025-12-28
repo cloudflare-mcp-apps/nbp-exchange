@@ -8,7 +8,7 @@
 import * as z from "zod/v4";
 
 /**
- * Input schema for getCurrencyRate tool (1 token)
+ * Input schema for getCurrencyRate tool
  *
  * Retrieves current or historical exchange rates for a specific currency
  */
@@ -30,7 +30,7 @@ export const GetCurrencyRateInput = z.object({
 });
 
 /**
- * Input schema for getGoldPrice tool (1 token)
+ * Input schema for getGoldPrice tool
  *
  * Retrieves official gold price per gram in PLN
  */
@@ -45,7 +45,7 @@ export const GetGoldPriceInput = z.object({
 });
 
 /**
- * Input schema for getCurrencyHistory tool (1 token)
+ * Input schema for getCurrencyHistory tool
  *
  * Retrieves historical exchange rate series over a date range
  */

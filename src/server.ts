@@ -147,7 +147,7 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
         // - Complex tools (getCurrencyHistory): Tool extractor
 
         // ========================================================================
-        // PART 2: Register Tool with UI Linkage (1 token)
+        // PART 2: Register Tool with UI Linkage
         // ========================================================================
         // Pattern: server-registration-patterns.md#pattern-1 (Two-Part Registration)
         //
@@ -210,7 +210,7 @@ export class NbpMCP extends McpAgent<Env, unknown, Props> {
             }
         );
 
-        // Tool 3: Get currency history (1 token) - Uses tool extractor (has pre-validation)
+        // Tool 3: Get currency history - Uses tool extractor (has pre-validation)
         // ========================================================================
         // PART 2b: Register Tool with UI Linkage for Currency History
         // ========================================================================
