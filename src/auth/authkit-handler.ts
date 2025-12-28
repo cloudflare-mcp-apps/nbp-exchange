@@ -29,6 +29,53 @@ app.use(async (c, next) => {
   await next();
 });
 
+// ============================================================
+// OAuth 2.1: PKCE (Proof Key for Code Exchange) Implementation
+// RFC 7636 compliance - prevents authorization code interception
+// ============================================================
+
+function generateCodeVerifier(): string {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return base64UrlEncode(array);
+}
+
+async function generateCodeChallenge(verifier: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return base64UrlEncode(new Uint8Array(hashBuffer));
+}
+
+function base64UrlEncode(buffer: Uint8Array): string {
+  let binaryString = '';
+  for (let i = 0; i < buffer.length; i++) {
+    binaryString += String.fromCharCode(buffer[i]);
+  }
+  const base64 = btoa(binaryString);
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function storeCodeVerifier(env: Env, state: string, verifier: string): Promise<void> {
+  if (!env.USER_SESSIONS) {
+    console.warn('[PKCE] USER_SESSIONS KV not configured');
+    return;
+  }
+  await env.USER_SESSIONS.put(`pkce:${state}`, verifier, { expirationTtl: 600 });
+}
+
+async function getCodeVerifier(env: Env, state: string): Promise<string | null> {
+  if (!env.USER_SESSIONS) {
+    console.warn('[PKCE] USER_SESSIONS KV not configured');
+    return null;
+  }
+  const verifier = await env.USER_SESSIONS.get(`pkce:${state}`);
+  if (verifier) {
+    await env.USER_SESSIONS.delete(`pkce:${state}`);
+  }
+  return verifier;
+}
+
 /**
  * Validate session and attempt refresh if expired
  *
@@ -155,12 +202,18 @@ app.get("/authorize", async (c) => {
 
   // No session - redirect to centralized login or fallback to WorkOS
   if (!c.env.USER_SESSIONS) {
+    // OAuth 2.1: Generate PKCE parameters
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
     const state = btoa(JSON.stringify(oauthReq));
+    await storeCodeVerifier(c.env, state, codeVerifier);
     return Response.redirect(
       c.get("workOS").userManagement.getAuthorizationUrl({
         provider: "authkit",
         clientId: c.env.WORKOS_CLIENT_ID,
         redirectUri: new URL("/callback", c.req.url).href,
+        codeChallenge,
+        codeChallengeMethod: 'S256',
         state,
       }),
     );
@@ -179,11 +232,20 @@ app.get("/callback", async (c) => {
   const code = c.req.query("code");
   if (!code) return c.text("Missing code", 400);
 
+  // OAuth 2.1: Retrieve and validate PKCE code_verifier
+  const state = c.req.query("state") as string;
+  const codeVerifier = await getCodeVerifier(c.env, state);
+  if (!codeVerifier) {
+    console.error('[PKCE] Code verifier not found or expired');
+    return c.text("Invalid or expired PKCE verification", 400);
+  }
+
   let response: AuthenticationResponse;
   try {
     response = await c.get("workOS").userManagement.authenticateWithCode({
       clientId: c.env.WORKOS_CLIENT_ID,
       code,
+      codeVerifier,
     });
   } catch {
     return c.text("Auth failed", 400);
